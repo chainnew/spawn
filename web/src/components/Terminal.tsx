@@ -1,14 +1,18 @@
 import { useEffect, useRef } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
-import { WebglAddon } from '@xterm/addon-webgl'
+import * as FitAddonModule from '@xterm/addon-fit'
+import * as WebglAddonModule from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { useAppStore } from '../stores/app'
+
+// Handle different export styles
+const FitAddon = FitAddonModule.FitAddon || FitAddonModule.default
+const WebglAddon = WebglAddonModule.WebglAddon || WebglAddonModule.default
 
 export default function Terminal() {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<XTerm | null>(null)
-  const fitAddonRef = useRef<FitAddon | null>(null)
+  const fitAddonRef = useRef<any>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const { setConnected } = useAppStore()
 
@@ -83,7 +87,6 @@ export default function Terminal() {
     // Handle resize
     const handleResize = () => {
       fitAddon.fit()
-      // TODO: Send resize to backend for PTY resize
     }
     window.addEventListener('resize', handleResize)
 
@@ -102,10 +105,7 @@ export default function Terminal() {
   }, [])
 
   const connectWebSocket = (xterm: XTerm) => {
-    // Use Vite proxy in dev, direct in prod
-    const wsUrl = import.meta.env.DEV 
-      ? `ws://${window.location.hostname}:3000/ws/terminal`
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/terminal`
+    const wsUrl = `ws://192.168.43.131:3000/ws/terminal`
     
     console.log('Connecting to:', wsUrl)
     const ws = new WebSocket(wsUrl)
@@ -117,7 +117,6 @@ export default function Terminal() {
     }
 
     ws.onmessage = (event) => {
-      // Backend sends raw text output from PTY
       xterm.write(event.data)
     }
 
@@ -126,7 +125,6 @@ export default function Terminal() {
       xterm.writeln('\r\n\x1b[31m● Disconnected from spawn backend\x1b[0m')
       xterm.writeln('\x1b[90mReconnecting in 3s...\x1b[0m')
       
-      // Auto-reconnect
       setTimeout(() => {
         if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
           connectWebSocket(xterm)
