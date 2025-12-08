@@ -1,18 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
-import * as FitAddonModule from '@xterm/addon-fit'
-import * as WebglAddonModule from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { useAppStore } from '../stores/app'
-
-// Handle different export styles
-const FitAddon = FitAddonModule.FitAddon || FitAddonModule.default
-const WebglAddon = WebglAddonModule.WebglAddon || WebglAddonModule.default
 
 export default function Terminal() {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<XTerm | null>(null)
-  const fitAddonRef = useRef<any>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const { setConnected } = useAppStore()
 
@@ -51,28 +44,11 @@ export default function Terminal() {
       scrollback: 10000,
     })
 
-    // Fit addon
-    const fitAddon = new FitAddon()
-    xterm.loadAddon(fitAddon)
-
-    // WebGL addon for performance
-    try {
-      const webglAddon = new WebglAddon()
-      xterm.loadAddon(webglAddon)
-      webglAddon.onContextLoss(() => {
-        webglAddon.dispose()
-      })
-    } catch (e) {
-      console.warn('WebGL addon not supported, falling back to canvas')
-    }
-
     // Open terminal
     xterm.open(terminalRef.current)
-    fitAddon.fit()
 
     // Store refs
     xtermRef.current = xterm
-    fitAddonRef.current = fitAddon
 
     // Welcome message
     xterm.writeln('\x1b[36m╭─────────────────────────────────────╮\x1b[0m')
@@ -84,12 +60,6 @@ export default function Terminal() {
     // Connect WebSocket
     connectWebSocket(xterm)
 
-    // Handle resize
-    const handleResize = () => {
-      fitAddon.fit()
-    }
-    window.addEventListener('resize', handleResize)
-
     // Handle input - send raw data directly
     xterm.onData((data) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -98,7 +68,6 @@ export default function Terminal() {
     })
 
     return () => {
-      window.removeEventListener('resize', handleResize)
       wsRef.current?.close()
       xterm.dispose()
     }

@@ -11,11 +11,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    // Required headers for CheerpX/WebVM (SharedArrayBuffer support)
-    headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-    },
+    host: true, // Allow external connections
     proxy: {
       '/api': {
         target: 'http://localhost:3000',
@@ -26,16 +22,5 @@ export default defineConfig({
         ws: true,
       },
     },
-  },
-  // Also set headers for preview/build
-  preview: {
-    headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-    },
-  },
-  // Optimize deps
-  optimizeDeps: {
-    exclude: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-webgl'],
   },
 })
