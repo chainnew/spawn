@@ -1,0 +1,45 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/spawn-core",
+    "crates/spawn-ai",
+    "crates/spawn-agents",
+    "crates/spawn-api",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Matto <matto@spawn.new>"]
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.40", features = ["full", "process"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# Web framework
+axum = { version = "0.7", features = ["ws"] }
+tower = "0.5"
+tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.22"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono", "uuid"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+
+# Utils
+uuid = { version = "1.10", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"

@@ -1,0 +1,16 @@
+[package]
+name = "spawn-agents"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+spawn-core = { path = "../spawn-core" }
+spawn-ai = { path = "../spawn-ai" }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+sqlx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
