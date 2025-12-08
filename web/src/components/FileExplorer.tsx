@@ -14,7 +14,8 @@ import {
 } from 'lucide-react'
 import { useAppStore, FileNode } from '../stores/app'
 
-const API_BASE = import.meta.env.DEV ? 'http://localhost:3000' : ''
+// Use same host as page, just different port
+const API_BASE = `http://${window.location.hostname}:3000`
 
 export default function FileExplorer() {
   const { files, setFiles, selectedFile, setSelectedFile, openFile } = useAppStore()
