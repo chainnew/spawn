@@ -1,26 +1,5 @@
-# Build
-/target/
-
-# Environment
+node_modules/
 .env
-
-# Database
-*.db
-*.db-shm
-*.db-wal
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
 .DS_Store
-Thumbs.db
-node_modules/
-web/node_modules/
-.vite/
-node_modules/
-web/node_modules/
-.vite/
+*.log
+target/
