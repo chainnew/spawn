@@ -8,6 +8,9 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import Database from 'better-sqlite3';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType, BorderStyle } from 'docx';
+import PDFDocument from 'pdfkit';
+import { GITHUB_ANALYSIS_PROMPT } from './github-analysis-prompt.js';
 
 dotenv.config();
 
@@ -71,6 +74,17 @@ if (!fs.existsSync(WORKSPACE_ABS)) {
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Disable caching for HTML files to ensure updates are always loaded
+app.use((req, res, next) => {
+  if (req.path.endsWith('.html') || req.path === '/') {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Request logger
@@ -606,6 +620,67 @@ RUNTIMES: 'browser', 'node', 'deno', 'bun', 'python', 'python:venv', 'rust', 'go
   {
     type: 'function',
     function: {
+      name: 'git_status',
+      description: 'Get the git status of a repository, showing changed files, staged changes, and branch info.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Path to repository (relative to workspace)' },
+        },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_commit',
+      description: 'Stage files and create a git commit. Requires GITHUB_TOKEN for subsequent push.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Path to repository (relative to workspace)' },
+          message: { type: 'string', description: 'Commit message' },
+          files: { type: 'array', items: { type: 'string' }, description: 'Files to stage (use ["."] for all changes)' },
+        },
+        required: ['path', 'message'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_push',
+      description: 'Push commits to remote repository. Requires GITHUB_TOKEN configured in environment.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Path to repository (relative to workspace)' },
+          branch: { type: 'string', description: 'Branch to push (defaults to current branch)' },
+          force: { type: 'boolean', description: 'Force push (use with caution)' },
+        },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_pull',
+      description: 'Pull latest changes from remote repository.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Path to repository (relative to workspace)' },
+          branch: { type: 'string', description: 'Branch to pull (defaults to current branch)' },
+        },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'analyze_repo',
       description: 'Analyze a repository structure and provide insights. Returns file tree, language breakdown, and key files.',
       parameters: {
@@ -811,6 +886,101 @@ RUNTIMES: 'browser', 'node', 'deno', 'bun', 'python', 'python:venv', 'rust', 'go
       },
     },
   },
+  // Web search and fetch tools
+  {
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description: 'Search the web using Tavily AI. Returns titles, URLs, content snippets, relevance scores, and an AI-generated answer summary. Use this to find current information, documentation, tutorials, or answers to questions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query' },
+          max_results: { type: 'number', description: 'Maximum number of results to return (default: 5, max: 10)' },
+          include_answer: { type: 'boolean', description: 'Include AI-generated answer summary (default: true)' },
+          search_depth: { type: 'string', enum: ['basic', 'advanced'], description: 'Search depth - basic is faster, advanced is more thorough (default: basic)' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'fetch_url',
+      description: 'Fetch and extract content from a URL. Returns the main text content of a webpage, cleaned of HTML/scripts. Useful for reading documentation, articles, or any webpage.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'The URL to fetch' },
+          selector: { type: 'string', description: 'Optional CSS selector to extract specific content (e.g., "article", "main", ".content")' },
+        },
+        required: ['url'],
+      },
+    },
+  },
+  // Word Document generation
+  {
+    type: 'function',
+    function: {
+      name: 'create_docx',
+      description: 'Create a Microsoft Word document (.docx) with formatted content. Supports headings, paragraphs, bullet lists, numbered lists, tables, bold/italic text, and more. The document is saved to the workspace.',
+      parameters: {
+        type: 'object',
+        properties: {
+          filename: { type: 'string', description: 'Output filename (should end with .docx)' },
+          title: { type: 'string', description: 'Document title (appears as main heading)' },
+          content: {
+            type: 'array',
+            description: 'Array of content blocks. Each block has a type and content.',
+            items: {
+              type: 'object',
+              properties: {
+                type: { type: 'string', enum: ['heading1', 'heading2', 'heading3', 'paragraph', 'bullet', 'number', 'table'], description: 'Content block type' },
+                text: { type: 'string', description: 'Text content (for heading/paragraph/bullet/number)' },
+                bold: { type: 'boolean', description: 'Make text bold' },
+                italic: { type: 'boolean', description: 'Make text italic' },
+                rows: { type: 'array', description: 'Table rows (array of arrays for table type)', items: { type: 'array', items: { type: 'string' } } },
+              },
+            },
+          },
+          author: { type: 'string', description: 'Document author metadata' },
+        },
+        required: ['filename', 'content'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_pdf',
+      description: 'Create a PDF document with formatted content. Supports headings, paragraphs, bullet lists, numbered lists, and basic text formatting. The document is saved to the workspace.',
+      parameters: {
+        type: 'object',
+        properties: {
+          filename: { type: 'string', description: 'Output filename (should end with .pdf)' },
+          title: { type: 'string', description: 'Document title (appears as main heading)' },
+          content: {
+            type: 'array',
+            description: 'Array of content blocks. Each block has a type and content.',
+            items: {
+              type: 'object',
+              properties: {
+                type: { type: 'string', enum: ['heading1', 'heading2', 'heading3', 'paragraph', 'bullet', 'number', 'hr', 'pagebreak'], description: 'Content block type' },
+                text: { type: 'string', description: 'Text content (for heading/paragraph/bullet/number)' },
+                bold: { type: 'boolean', description: 'Make text bold' },
+                italic: { type: 'boolean', description: 'Make text italic' },
+                color: { type: 'string', description: 'Text color (hex like #333333 or name like "blue")' },
+              },
+            },
+          },
+          author: { type: 'string', description: 'Document author metadata' },
+          pageSize: { type: 'string', enum: ['letter', 'a4', 'legal'], description: 'Page size (default: letter)' },
+        },
+        required: ['filename', 'content'],
+      },
+    },
+  },
 ];
 
 // ==================== Tool Execution ====================
@@ -991,11 +1161,19 @@ async function executeTool(name, args) {
         return { success: false, error: `Directory '${repoName}' already exists. Use a different target_dir or delete it first.` };
       }
 
+      // Inject GITHUB_TOKEN for private repos (if configured)
+      const githubToken = process.env.GITHUB_TOKEN;
+      let cloneUrl = repoUrl;
+      if (githubToken && repoUrl.includes('github.com') && repoUrl.startsWith('https://')) {
+        // Replace https://github.com with https://<token>@github.com
+        cloneUrl = repoUrl.replace('https://github.com', `https://${githubToken}@github.com`);
+      }
+
       // Build git clone command
       let cmd = `git clone`;
       if (args.depth) cmd += ` --depth ${args.depth}`;
       if (args.branch) cmd += ` --branch ${args.branch}`;
-      cmd += ` "${repoUrl}" "${repoName}"`;
+      cmd += ` "${cloneUrl}" "${repoName}"`;
 
       const result = await runExec(cmd);
 
@@ -1014,6 +1192,217 @@ async function executeTool(name, args) {
         };
       }
       return { success: false, error: result.stderr || result.stdout };
+    }
+
+    case 'git_status': {
+      const repoPath = path.resolve(WORKSPACE_ABS, args.path || '.');
+
+      if (!fs.existsSync(repoPath)) {
+        return { success: false, error: `Path '${args.path}' does not exist` };
+      }
+
+      // Check if it's a git repo
+      const isGitRepo = fs.existsSync(path.join(repoPath, '.git'));
+      if (!isGitRepo) {
+        return { success: false, error: `'${args.path}' is not a git repository` };
+      }
+
+      // Get comprehensive git status
+      const statusCmd = `cd "${repoPath}" && git status --porcelain`;
+      const branchCmd = `cd "${repoPath}" && git branch --show-current`;
+      const remoteCmd = `cd "${repoPath}" && git remote -v`;
+      const logCmd = `cd "${repoPath}" && git log --oneline -5 2>/dev/null || echo "no commits"`;
+
+      const [status, branch, remote, log] = await Promise.all([
+        runExec(statusCmd),
+        runExec(branchCmd),
+        runExec(remoteCmd),
+        runExec(logCmd),
+      ]);
+
+      // Parse status into categories
+      const lines = status.stdout.split('\n').filter(l => l.trim());
+      const staged = lines.filter(l => l[0] !== ' ' && l[0] !== '?');
+      const unstaged = lines.filter(l => l[1] !== ' ' && l[0] !== '?');
+      const untracked = lines.filter(l => l.startsWith('??'));
+
+      return {
+        success: true,
+        path: args.path,
+        branch: branch.stdout.trim(),
+        remote: remote.stdout.trim(),
+        recent_commits: log.stdout.trim(),
+        status: {
+          staged: staged.map(l => l.substring(3)),
+          unstaged: unstaged.map(l => l.substring(3)),
+          untracked: untracked.map(l => l.substring(3)),
+        },
+        raw_status: status.stdout,
+        clean: lines.length === 0,
+      };
+    }
+
+    case 'git_commit': {
+      const repoPath = path.resolve(WORKSPACE_ABS, args.path || '.');
+      const message = args.message;
+
+      if (!message) {
+        return { success: false, error: 'Commit message is required' };
+      }
+
+      if (!fs.existsSync(repoPath)) {
+        return { success: false, error: `Path '${args.path}' does not exist` };
+      }
+
+      // Stage files
+      let stageCmd;
+      if (args.files && Array.isArray(args.files) && args.files.length > 0) {
+        // Stage specific files
+        const fileList = args.files.map(f => `"${f}"`).join(' ');
+        stageCmd = `cd "${repoPath}" && git add ${fileList}`;
+      } else {
+        // Stage all changes
+        stageCmd = `cd "${repoPath}" && git add -A`;
+      }
+
+      const stageResult = await runExec(stageCmd);
+      if (!stageResult.success && stageResult.stderr) {
+        return { success: false, error: `Failed to stage files: ${stageResult.stderr}` };
+      }
+
+      // Check if there's anything to commit
+      const statusCheck = await runExec(`cd "${repoPath}" && git diff --cached --quiet && echo "empty" || echo "has_changes"`);
+      if (statusCheck.stdout.trim() === 'empty') {
+        return { success: false, error: 'Nothing to commit (no staged changes)' };
+      }
+
+      // Escape message for shell
+      const escapedMessage = message.replace(/'/g, "'\\''");
+      const commitCmd = `cd "${repoPath}" && git commit -m '${escapedMessage}'`;
+      const commitResult = await runExec(commitCmd);
+
+      if (commitResult.success) {
+        // Get the commit hash
+        const hashResult = await runExec(`cd "${repoPath}" && git rev-parse --short HEAD`);
+        return {
+          success: true,
+          message: message,
+          commit_hash: hashResult.stdout.trim(),
+          output: commitResult.stdout,
+        };
+      }
+      return { success: false, error: commitResult.stderr || commitResult.stdout };
+    }
+
+    case 'git_push': {
+      const repoPath = path.resolve(WORKSPACE_ABS, args.path || '.');
+      const branch = args.branch || '';
+      const force = args.force || false;
+
+      if (!fs.existsSync(repoPath)) {
+        return { success: false, error: `Path '${args.path}' does not exist` };
+      }
+
+      // Check for GitHub token
+      const githubToken = process.env.GITHUB_TOKEN;
+      if (!githubToken) {
+        return {
+          success: false,
+          error: 'GITHUB_TOKEN not configured. Set GITHUB_TOKEN in .env to enable push.'
+        };
+      }
+
+      // Get current remote URL
+      const remoteResult = await runExec(`cd "${repoPath}" && git remote get-url origin`);
+      if (!remoteResult.success) {
+        return { success: false, error: 'No remote origin configured' };
+      }
+
+      let remoteUrl = remoteResult.stdout.trim();
+
+      // Configure credential helper for this push
+      // Convert HTTPS URL to include token, or use token for SSH-style URLs
+      if (remoteUrl.includes('github.com')) {
+        // Set up credential helper temporarily
+        await runExec(`cd "${repoPath}" && git config credential.helper 'store --file=/tmp/.git-credentials-temp'`);
+
+        // Extract repo path from URL
+        let repoIdentifier;
+        if (remoteUrl.startsWith('https://')) {
+          repoIdentifier = remoteUrl.replace('https://github.com/', '');
+        } else if (remoteUrl.startsWith('git@github.com:')) {
+          repoIdentifier = remoteUrl.replace('git@github.com:', '');
+        }
+        if (repoIdentifier && repoIdentifier.endsWith('.git')) {
+          repoIdentifier = repoIdentifier.slice(0, -4);
+        }
+
+        // Write credentials
+        fs.writeFileSync('/tmp/.git-credentials-temp', `https://${githubToken}@github.com\n`);
+      }
+
+      // Build push command
+      let pushCmd = `cd "${repoPath}" && git push`;
+      if (force) pushCmd += ' --force';
+      if (branch) pushCmd += ` origin ${branch}`;
+
+      const pushResult = await runExec(pushCmd);
+
+      // Clean up credentials
+      try {
+        fs.unlinkSync('/tmp/.git-credentials-temp');
+        await runExec(`cd "${repoPath}" && git config --unset credential.helper`);
+      } catch (e) { /* ignore cleanup errors */ }
+
+      if (pushResult.success || pushResult.stderr.includes('Everything up-to-date')) {
+        return {
+          success: true,
+          output: pushResult.stdout + pushResult.stderr,
+          branch: branch || 'current branch',
+        };
+      }
+      return { success: false, error: pushResult.stderr || pushResult.stdout };
+    }
+
+    case 'git_pull': {
+      const repoPath = path.resolve(WORKSPACE_ABS, args.path || '.');
+      const branch = args.branch || '';
+
+      if (!fs.existsSync(repoPath)) {
+        return { success: false, error: `Path '${args.path}' does not exist` };
+      }
+
+      // Check for GitHub token for private repos
+      const githubToken = process.env.GITHUB_TOKEN;
+
+      if (githubToken) {
+        // Set up credential helper temporarily
+        await runExec(`cd "${repoPath}" && git config credential.helper 'store --file=/tmp/.git-credentials-temp'`);
+        fs.writeFileSync('/tmp/.git-credentials-temp', `https://${githubToken}@github.com\n`);
+      }
+
+      // Build pull command
+      let pullCmd = `cd "${repoPath}" && git pull`;
+      if (branch) pullCmd += ` origin ${branch}`;
+
+      const pullResult = await runExec(pullCmd);
+
+      // Clean up credentials
+      if (githubToken) {
+        try {
+          fs.unlinkSync('/tmp/.git-credentials-temp');
+          await runExec(`cd "${repoPath}" && git config --unset credential.helper`);
+        } catch (e) { /* ignore cleanup errors */ }
+      }
+
+      if (pullResult.success || pullResult.stdout.includes('Already up to date')) {
+        return {
+          success: true,
+          output: pullResult.stdout + pullResult.stderr,
+          branch: branch || 'current branch',
+        };
+      }
+      return { success: false, error: pullResult.stderr || pullResult.stdout };
     }
 
     case 'analyze_repo': {
@@ -1255,6 +1644,428 @@ async function executeTool(name, args) {
         };
       } catch (err) {
         return { success: false, error: `List failed: ${err.message}` };
+      }
+    }
+
+    case 'web_search': {
+      try {
+        const { query, max_results = 5, include_answer = true, search_depth = 'basic' } = args;
+        const limit = Math.min(max_results, 10);
+
+        const tavilyKey = process.env.TAVILY_API_KEY;
+        if (!tavilyKey) {
+          return { success: false, error: 'TAVILY_API_KEY not configured' };
+        }
+
+        // Use Tavily Search API
+        const response = await fetch('https://api.tavily.com/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            api_key: tavilyKey,
+            query: query,
+            search_depth: search_depth,
+            include_answer: include_answer,
+            max_results: limit
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          return { success: false, error: `Tavily search failed: ${response.status} - ${errorText}` };
+        }
+
+        const data = await response.json();
+
+        // Format results
+        const results = (data.results || []).map(r => ({
+          title: r.title,
+          url: r.url,
+          content: r.content,
+          score: r.score,
+          favicon: r.favicon
+        }));
+
+        return {
+          success: true,
+          query: data.query,
+          answer: data.answer || null,
+          results,
+          result_count: results.length,
+          response_time: data.response_time
+        };
+      } catch (err) {
+        return { success: false, error: `Web search failed: ${err.message}` };
+      }
+    }
+
+    case 'fetch_url': {
+      try {
+        const { url, selector } = args;
+
+        const response = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+          },
+          timeout: 30000
+        });
+
+        if (!response.ok) {
+          return { success: false, error: `Fetch failed: ${response.status} ${response.statusText}` };
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        let content = await response.text();
+
+        // If it's HTML, extract text content
+        if (contentType.includes('text/html')) {
+          // Remove scripts, styles, and other non-content elements
+          content = content
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
+            .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+            .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+            .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+            .replace(/<!--[\s\S]*?-->/g, '');
+
+          // If selector provided, try to extract that section
+          if (selector) {
+            const selectorRegex = new RegExp(`<${selector}[^>]*>([\\s\\S]*?)<\\/${selector}>`, 'i');
+            const selectorMatch = content.match(selectorRegex);
+            if (selectorMatch) {
+              content = selectorMatch[1];
+            }
+          } else {
+            // Try to get main content areas
+            const mainMatch = content.match(/<main[^>]*>([\s\S]*?)<\/main>/i) ||
+                             content.match(/<article[^>]*>([\s\S]*?)<\/article>/i) ||
+                             content.match(/<div[^>]*class="[^"]*content[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
+                             content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+            if (mainMatch) {
+              content = mainMatch[1];
+            }
+          }
+
+          // Convert to plain text
+          content = content
+            .replace(/<h[1-6][^>]*>/gi, '\n\n## ')
+            .replace(/<\/h[1-6]>/gi, '\n')
+            .replace(/<p[^>]*>/gi, '\n')
+            .replace(/<\/p>/gi, '\n')
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<li[^>]*>/gi, '\n• ')
+            .replace(/<\/li>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/\s+/g, ' ')
+            .replace(/\n\s+/g, '\n')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+        }
+
+        // Truncate if too long
+        const maxLength = 50000;
+        if (content.length > maxLength) {
+          content = content.slice(0, maxLength) + '\n\n[Content truncated...]';
+        }
+
+        return {
+          success: true,
+          url,
+          content_type: contentType,
+          content,
+          length: content.length
+        };
+      } catch (err) {
+        return { success: false, error: `Fetch failed: ${err.message}` };
+      }
+    }
+
+    case 'create_docx': {
+      try {
+        const { filename, title, content, author } = args;
+        const outputPath = path.resolve(WORKSPACE_ABS, filename.endsWith('.docx') ? filename : `${filename}.docx`);
+
+        // Build document sections
+        const children = [];
+
+        // Add title if provided
+        if (title) {
+          children.push(
+            new Paragraph({
+              text: title,
+              heading: HeadingLevel.TITLE,
+              alignment: AlignmentType.CENTER,
+              spacing: { after: 400 },
+            })
+          );
+        }
+
+        // Process content blocks
+        let bulletNumber = 0;
+        let numberListNum = 0;
+
+        for (const block of content) {
+          switch (block.type) {
+            case 'heading1':
+              children.push(new Paragraph({
+                text: block.text,
+                heading: HeadingLevel.HEADING_1,
+                spacing: { before: 400, after: 200 },
+              }));
+              break;
+
+            case 'heading2':
+              children.push(new Paragraph({
+                text: block.text,
+                heading: HeadingLevel.HEADING_2,
+                spacing: { before: 300, after: 150 },
+              }));
+              break;
+
+            case 'heading3':
+              children.push(new Paragraph({
+                text: block.text,
+                heading: HeadingLevel.HEADING_3,
+                spacing: { before: 200, after: 100 },
+              }));
+              break;
+
+            case 'paragraph':
+              children.push(new Paragraph({
+                children: [
+                  new TextRun({
+                    text: block.text,
+                    bold: block.bold || false,
+                    italics: block.italic || false,
+                  }),
+                ],
+                spacing: { after: 200 },
+              }));
+              break;
+
+            case 'bullet':
+              children.push(new Paragraph({
+                children: [
+                  new TextRun({
+                    text: block.text,
+                    bold: block.bold || false,
+                    italics: block.italic || false,
+                  }),
+                ],
+                bullet: { level: 0 },
+                spacing: { after: 100 },
+              }));
+              break;
+
+            case 'number':
+              numberListNum++;
+              children.push(new Paragraph({
+                children: [
+                  new TextRun({
+                    text: `${numberListNum}. ${block.text}`,
+                    bold: block.bold || false,
+                    italics: block.italic || false,
+                  }),
+                ],
+                spacing: { after: 100 },
+              }));
+              break;
+
+            case 'table':
+              if (block.rows && Array.isArray(block.rows)) {
+                const tableRows = block.rows.map((row, rowIdx) =>
+                  new TableRow({
+                    children: row.map(cell =>
+                      new TableCell({
+                        children: [new Paragraph({ text: cell })],
+                        width: { size: 100 / row.length, type: WidthType.PERCENTAGE },
+                        shading: rowIdx === 0 ? { fill: 'E0E0E0' } : undefined,
+                      })
+                    ),
+                  })
+                );
+                children.push(new Table({
+                  rows: tableRows,
+                  width: { size: 100, type: WidthType.PERCENTAGE },
+                }));
+                children.push(new Paragraph({ text: '', spacing: { after: 200 } }));
+              }
+              break;
+          }
+        }
+
+        // Create document
+        const doc = new Document({
+          creator: author || 'ARCHITECT',
+          title: title || filename,
+          sections: [{
+            properties: {},
+            children,
+          }],
+        });
+
+        // Generate and save
+        const buffer = await Packer.toBuffer(doc);
+        fs.writeFileSync(outputPath, buffer);
+
+        return {
+          success: true,
+          path: outputPath,
+          filename: path.basename(outputPath),
+          message: `Word document created: ${path.basename(outputPath)}`,
+        };
+      } catch (err) {
+        return { success: false, error: `Failed to create docx: ${err.message}` };
+      }
+    }
+
+    case 'create_pdf': {
+      try {
+        const { filename, title, content, author, pageSize = 'letter' } = args;
+        const outputPath = path.resolve(WORKSPACE_ABS, filename.endsWith('.pdf') ? filename : `${filename}.pdf`);
+
+        // Create PDF document
+        const doc = new PDFDocument({
+          size: pageSize.toUpperCase(),
+          margins: { top: 72, bottom: 72, left: 72, right: 72 },
+          info: {
+            Title: title || filename,
+            Author: author || 'ARCHITECT',
+          },
+        });
+
+        // Pipe to file
+        const writeStream = fs.createWriteStream(outputPath);
+        doc.pipe(writeStream);
+
+        // Font sizes
+        const FONT_SIZES = {
+          title: 24,
+          heading1: 20,
+          heading2: 16,
+          heading3: 14,
+          paragraph: 12,
+          bullet: 12,
+          number: 12,
+        };
+
+        // Add title if provided
+        if (title) {
+          doc.fontSize(FONT_SIZES.title)
+             .font('Helvetica-Bold')
+             .text(title, { align: 'center' })
+             .moveDown(1.5);
+        }
+
+        // Process content blocks
+        let numberListNum = 0;
+
+        for (const block of content) {
+          const textColor = block.color || '#000000';
+
+          switch (block.type) {
+            case 'heading1':
+              doc.fontSize(FONT_SIZES.heading1)
+                 .font('Helvetica-Bold')
+                 .fillColor(textColor)
+                 .text(block.text)
+                 .moveDown(0.5);
+              break;
+
+            case 'heading2':
+              doc.fontSize(FONT_SIZES.heading2)
+                 .font('Helvetica-Bold')
+                 .fillColor(textColor)
+                 .text(block.text)
+                 .moveDown(0.4);
+              break;
+
+            case 'heading3':
+              doc.fontSize(FONT_SIZES.heading3)
+                 .font('Helvetica-Bold')
+                 .fillColor(textColor)
+                 .text(block.text)
+                 .moveDown(0.3);
+              break;
+
+            case 'paragraph': {
+              const fontName = block.bold && block.italic ? 'Helvetica-BoldOblique' :
+                               block.bold ? 'Helvetica-Bold' :
+                               block.italic ? 'Helvetica-Oblique' : 'Helvetica';
+              doc.fontSize(FONT_SIZES.paragraph)
+                 .font(fontName)
+                 .fillColor(textColor)
+                 .text(block.text)
+                 .moveDown(0.5);
+              break;
+            }
+
+            case 'bullet': {
+              const fontName = block.bold && block.italic ? 'Helvetica-BoldOblique' :
+                               block.bold ? 'Helvetica-Bold' :
+                               block.italic ? 'Helvetica-Oblique' : 'Helvetica';
+              doc.fontSize(FONT_SIZES.bullet)
+                 .font(fontName)
+                 .fillColor(textColor)
+                 .text(`• ${block.text}`, { indent: 20 })
+                 .moveDown(0.3);
+              break;
+            }
+
+            case 'number': {
+              numberListNum++;
+              const fontName = block.bold && block.italic ? 'Helvetica-BoldOblique' :
+                               block.bold ? 'Helvetica-Bold' :
+                               block.italic ? 'Helvetica-Oblique' : 'Helvetica';
+              doc.fontSize(FONT_SIZES.number)
+                 .font(fontName)
+                 .fillColor(textColor)
+                 .text(`${numberListNum}. ${block.text}`, { indent: 20 })
+                 .moveDown(0.3);
+              break;
+            }
+
+            case 'hr':
+              doc.moveDown(0.5)
+                 .moveTo(72, doc.y)
+                 .lineTo(doc.page.width - 72, doc.y)
+                 .stroke('#cccccc')
+                 .moveDown(0.5);
+              break;
+
+            case 'pagebreak':
+              doc.addPage();
+              break;
+          }
+        }
+
+        // Finalize PDF
+        doc.end();
+
+        // Wait for write to complete
+        await new Promise((resolve, reject) => {
+          writeStream.on('finish', resolve);
+          writeStream.on('error', reject);
+        });
+
+        return {
+          success: true,
+          path: outputPath,
+          filename: path.basename(outputPath),
+          message: `PDF document created: ${path.basename(outputPath)}`,
+        };
+      } catch (err) {
+        return { success: false, error: `Failed to create PDF: ${err.message}` };
       }
     }
 
@@ -1967,7 +2778,9 @@ create_artifact({
 □ Artifact shown on canvas with allow_edit: true
 
 ---
-Ready to architect. What would you like to build?`;
+Ready to architect. What would you like to build?
+
+${GITHUB_ANALYSIS_PROMPT}`;
 
 
 // Streaming LLM call with interleaved text + tool support
@@ -2478,12 +3291,58 @@ app.post('/api/chat/stream', async (req, res) => {
     ];
 
     let iterations = 0;
-    while (iterations++ < 10) {
-      send({ type: 'thinking', iteration: iterations });
+    let continuationAttempts = 0;
+    const MAX_CONTINUATIONS = 5;
+    const toolsUsed = [];
+    const completedPhases = new Set();
+
+    // Helper to detect which phases are complete from assistant output
+    function detectCompletedPhases(content) {
+      const phasePatterns = [
+        { phase: 1, patterns: ['PHASE 1 COMPLETE', 'REPOSITORY ACQUIRED', 'Phase 1:', 'ACQUISITION'] },
+        { phase: 2, patterns: ['PHASE 2 COMPLETE', 'ANALYSIS FINISHED', 'DIRECTORY STRUCTURE', 'FILE INVENTORY', 'LANGUAGE BREAKDOWN'] },
+        { phase: 3, patterns: ['PHASE 3 COMPLETE', 'CRITIQUE', 'STRENGTHS', 'ISSUES', 'MISSING COMPONENTS', 'TECHNICAL DEBT'] },
+        { phase: 4, patterns: ['PHASE 4 COMPLETE', 'SPRINT BOARD', 'TASK BREAKDOWN', 'TASK-001', 'BACKLOG'] },
+        { phase: 5, patterns: ['PHASE 5 COMPLETE', 'EXECUTION PLAN', 'EXECUTION LOG'] },
+        { phase: 6, patterns: ['PHASE 6 COMPLETE', 'SESSION COMPLETE', 'SESSION SUMMARY', 'Push to remote'] }
+      ];
+
+      for (const { phase, patterns } of phasePatterns) {
+        if (patterns.some(p => content.includes(p))) {
+          completedPhases.add(phase);
+        }
+      }
+    }
+
+    // Helper to determine next phase needed
+    function getNextPhase() {
+      if (!completedPhases.has(1)) return { num: 1, name: 'ACQUIRE', desc: 'Clone repository and gather initial info' };
+      if (!completedPhases.has(2)) return { num: 2, name: 'ANALYZE', desc: 'Directory structure, file inventory, language breakdown, quality metrics' };
+      if (!completedPhases.has(3)) return { num: 3, name: 'CRITIQUE', desc: 'Strengths, issues by severity, missing components, technical debt' };
+      if (!completedPhases.has(4)) return { num: 4, name: 'TASKS', desc: 'Sprint board, prioritized task breakdown' };
+      if (!completedPhases.has(5)) return { num: 5, name: 'EXECUTE', desc: 'Execution plan with specific file changes' };
+      if (!completedPhases.has(6)) return { num: 6, name: 'SUMMARY', desc: 'Final session summary and recommendations' };
+      return null;
+    }
+
+    // Required phases for a complete analysis (we'll require 1-4 minimum)
+    const REQUIRED_PHASES = [1, 2, 3, 4];
+
+    while (iterations++ < 20) {
+      send({ type: 'thinking', iteration: iterations, completedPhases: [...completedPhases] });
 
       const response = await callLLM(messages, TOOLS);
       const msg = response.choices[0].message;
-      console.log(`[Iteration ${iterations}] Tool calls:`, msg.tool_calls?.length || 0, msg.tool_calls?.map(t => t.function.name) || []);
+
+      // Log iteration details
+      const toolNames = msg.tool_calls?.map(t => t.function?.name || 'unknown') || [];
+      console.log(`[Iteration ${iterations}] Tool calls: ${msg.tool_calls?.length || 0}`, toolNames);
+
+      // Track completed phases from content
+      if (msg.content) {
+        detectCompletedPhases(msg.content);
+      }
+
       messages.push(msg);
 
       if (msg.tool_calls?.length) {
@@ -2494,6 +3353,7 @@ app.post('/api/chat/stream', async (req, res) => {
             continue;
           }
 
+          toolsUsed.push(tc.function.name);
           const args = JSON.parse(tc.function.arguments || '{}');
           send({ type: 'tool_start', tool: tc.function.name, args });
 
@@ -2505,8 +3365,67 @@ app.post('/api/chat/stream', async (req, res) => {
           messages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) });
         }
       } else {
-        send({ type: 'response', content: msg.content || '' });
-        send({ type: 'done', iterations });
+        // No tool calls - model wants to stop
+
+        // If no content provided, ask for a summary
+        if (!msg.content || msg.content.trim() === '') {
+          console.log('[Agent] Empty response - requesting continuation');
+          messages.push({ role: 'user', content: 'Please continue with your analysis. Provide the next phase output.' });
+          continue;
+        }
+
+        // Send the partial response to user immediately
+        send({ type: 'response', content: msg.content });
+
+        // Check if ALL required phases are complete
+        const allPhasesComplete = REQUIRED_PHASES.every(p => completedPhases.has(p));
+        const hasCompletionMarker = msg.content.includes('SESSION COMPLETE') || msg.content.includes('SESSION SUMMARY');
+
+        console.log(`[Iteration ${iterations}] Completed phases: [${[...completedPhases].sort().join(', ')}]`);
+        console.log(`[Iteration ${iterations}] All required phases complete: ${allPhasesComplete}`);
+        console.log(`[Iteration ${iterations}] Has completion marker: ${hasCompletionMarker}`);
+        console.log(`[Iteration ${iterations}] Tools used: ${[...new Set(toolsUsed)].join(', ')}`);
+
+        // If all required phases complete OR we have a completion marker, we're done
+        if (allPhasesComplete || hasCompletionMarker) {
+          console.log(`[Iteration ${iterations}] ✅ Pipeline complete!`);
+          send({ type: 'done', iterations, completedPhases: [...completedPhases], toolsUsed: [...new Set(toolsUsed)] });
+          return res.end();
+        }
+
+        // ⚠️ PREMATURE STOP DETECTED - Inject continuation
+        if (continuationAttempts < MAX_CONTINUATIONS) {
+          continuationAttempts++;
+          const nextPhase = getNextPhase();
+
+          console.log(`[Iteration ${iterations}] ⚠️ PREMATURE STOP - Injecting continuation (attempt ${continuationAttempts}/${MAX_CONTINUATIONS})`);
+          console.log(`[Iteration ${iterations}] Next phase needed: Phase ${nextPhase?.num} - ${nextPhase?.name}`);
+
+          // Build phase status string
+          const phaseStatus = [1, 2, 3, 4, 5, 6].map(p =>
+            `- Phase ${p}: ${completedPhases.has(p) ? '✅' : '❌ PENDING'}`
+          ).join('\n');
+
+          messages.push({
+            role: 'user',
+            content: `⚠️ PIPELINE INCOMPLETE - DO NOT STOP
+
+You have completed phases: [${[...completedPhases].sort().join(', ')}]
+
+REQUIRED: Complete ALL phases in order:
+${phaseStatus}
+
+CONTINUE NOW with Phase ${nextPhase?.num}: ${nextPhase?.name}
+${nextPhase?.desc}
+
+Do NOT stop until you reach "SESSION COMPLETE". Use the appropriate tools and output the required templates.`
+          });
+          continue;
+        }
+
+        // Max continuations reached - exit with warning
+        console.log(`[Iteration ${iterations}] Max continuations reached, exiting`);
+        send({ type: 'done', iterations, completedPhases: [...completedPhases], toolsUsed: [...new Set(toolsUsed)], incomplete: true });
         return res.end();
       }
     }
@@ -2951,6 +3870,240 @@ app.get('/api/artifacts/schema/types', (_req, res) => {
     display_modes: [...VALID_DISPLAY_MODES],
     themes: [...VALID_THEMES]
   });
+});
+
+// ==================== Git REST API ====================
+
+// Helper for running git commands
+async function runGit(args, cwd) {
+  return new Promise((resolve) => {
+    const proc = spawn('git', args, { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+    let stdout = '', stderr = '';
+    proc.stdout.on('data', d => stdout += d);
+    proc.stderr.on('data', d => stderr += d);
+    proc.on('close', code => resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code }));
+    proc.on('error', err => resolve({ stdout: '', stderr: err.message, code: 1 }));
+  });
+}
+
+// GET /api/git/status?path=repo-name
+app.get('/api/git/status', async (req, res) => {
+  const repoPath = path.join(WORKSPACE_ABS, req.query.path || '');
+  if (!fs.existsSync(path.join(repoPath, '.git'))) {
+    return res.status(400).json({ error: 'Not a git repository' });
+  }
+
+  const [branch, remote, status, log] = await Promise.all([
+    runGit(['rev-parse', '--abbrev-ref', 'HEAD'], repoPath),
+    runGit(['remote', 'get-url', 'origin'], repoPath),
+    runGit(['status', '--porcelain'], repoPath),
+    runGit(['log', '--oneline', '-5'], repoPath)
+  ]);
+
+  const lines = status.stdout.split('\n').filter(l => l);
+  res.json({
+    branch: branch.stdout,
+    remote: remote.stdout || null,
+    staged: lines.filter(l => /^[MADRC]/.test(l)).map(l => l.slice(3)),
+    unstaged: lines.filter(l => /^.[MADRC]/.test(l)).map(l => l.slice(3)),
+    untracked: lines.filter(l => l.startsWith('??')).map(l => l.slice(3)),
+    recent_commits: log.stdout.split('\n').filter(l => l)
+  });
+});
+
+// POST /api/git/clone { repo, target, depth }
+app.post('/api/git/clone', async (req, res) => {
+  const { repo, target, depth } = req.body;
+  if (!repo) return res.status(400).json({ error: 'repo is required' });
+
+  let repoUrl = repo;
+  if (!repo.includes('://') && !repo.startsWith('git@')) {
+    repoUrl = `https://github.com/${repo}.git`;
+  }
+
+  // Inject token for private repos
+  const token = process.env.GITHUB_TOKEN;
+  if (token && repoUrl.includes('github.com') && repoUrl.startsWith('https://')) {
+    repoUrl = repoUrl.replace('https://github.com', `https://${token}@github.com`);
+  }
+
+  const targetDir = target || repo.split('/').pop().replace('.git', '');
+  const args = ['clone'];
+  if (depth) args.push('--depth', String(depth));
+  args.push(repoUrl, targetDir);
+
+  const result = await runGit(args, WORKSPACE_ABS);
+  if (result.code !== 0) {
+    return res.status(400).json({ error: result.stderr || 'Clone failed' });
+  }
+  res.json({ success: true, path: targetDir, message: result.stderr || 'Cloned successfully' });
+});
+
+// POST /api/git/commit { path, message, files }
+app.post('/api/git/commit', async (req, res) => {
+  const { path: repoPath, message, files } = req.body;
+  const fullPath = path.join(WORKSPACE_ABS, repoPath || '');
+
+  if (!message) return res.status(400).json({ error: 'message is required' });
+
+  // Stage files
+  const addArgs = files && files.length ? ['add', ...files] : ['add', '-A'];
+  const addResult = await runGit(addArgs, fullPath);
+  if (addResult.code !== 0) {
+    return res.status(400).json({ error: addResult.stderr });
+  }
+
+  // Commit
+  const commitResult = await runGit(['commit', '-m', message], fullPath);
+  if (commitResult.code !== 0) {
+    return res.status(400).json({ error: commitResult.stderr || 'Nothing to commit' });
+  }
+
+  const hashResult = await runGit(['rev-parse', '--short', 'HEAD'], fullPath);
+  res.json({ success: true, commit: hashResult.stdout, message: commitResult.stdout });
+});
+
+// POST /api/git/push { path, branch, force }
+app.post('/api/git/push', async (req, res) => {
+  const { path: repoPath, branch, force } = req.body;
+  const fullPath = path.join(WORKSPACE_ABS, repoPath || '');
+  const token = process.env.GITHUB_TOKEN;
+
+  if (!token) {
+    return res.status(400).json({ error: 'GITHUB_TOKEN not configured' });
+  }
+
+  // Set up credential helper temporarily
+  const credHelper = path.join(fullPath, '.git-credentials-helper');
+  fs.writeFileSync(credHelper, `#!/bin/sh\necho "username=oauth2\npassword=${token}"`, { mode: 0o700 });
+
+  const args = ['push'];
+  if (branch) args.push('origin', branch);
+  if (force) args.push('--force');
+
+  const result = await runGit(args, fullPath);
+  fs.unlinkSync(credHelper);
+
+  if (result.code !== 0) {
+    return res.status(400).json({ error: result.stderr });
+  }
+  res.json({ success: true, message: result.stderr || 'Pushed successfully' });
+});
+
+// POST /api/git/pull { path, branch }
+app.post('/api/git/pull', async (req, res) => {
+  const { path: repoPath, branch } = req.body;
+  const fullPath = path.join(WORKSPACE_ABS, repoPath || '');
+
+  const args = ['pull'];
+  if (branch) args.push('origin', branch);
+
+  const result = await runGit(args, fullPath);
+  if (result.code !== 0) {
+    return res.status(400).json({ error: result.stderr });
+  }
+  res.json({ success: true, message: result.stdout || result.stderr });
+});
+
+// GET /api/git/config - Get GitHub configuration status
+app.get('/api/git/config', (_req, res) => {
+  const token = process.env.GITHUB_TOKEN;
+  res.json({
+    github_token_configured: !!token,
+    github_token_preview: token ? `${token.slice(0, 8)}...${token.slice(-4)}` : null
+  });
+});
+
+// POST /api/git/config - Set GitHub token (runtime only, doesn't persist to .env)
+app.post('/api/git/config', (req, res) => {
+  const { github_token } = req.body;
+  if (github_token) {
+    process.env.GITHUB_TOKEN = github_token;
+    res.json({ success: true, message: 'GitHub token configured (runtime only)' });
+  } else {
+    res.status(400).json({ error: 'github_token is required' });
+  }
+});
+
+// GET /api/git/repos - List user's GitHub repositories
+app.get('/api/git/repos', async (req, res) => {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    return res.status(401).json({ error: 'GitHub token not configured' });
+  }
+
+  try {
+    const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'ARCHITECT-Sandbox'
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      return res.status(response.status).json({ error: `GitHub API error: ${error}` });
+    }
+
+    const repos = await response.json();
+
+    // Return simplified repo info
+    const simplified = repos.map(r => ({
+      name: r.name,
+      full_name: r.full_name,
+      description: r.description,
+      private: r.private,
+      clone_url: r.clone_url,
+      ssh_url: r.ssh_url,
+      html_url: r.html_url,
+      updated_at: r.updated_at,
+      language: r.language,
+      stargazers_count: r.stargazers_count,
+      default_branch: r.default_branch
+    }));
+
+    res.json({ repos: simplified });
+  } catch (err) {
+    logger.error('GIT', 'Failed to fetch repos', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/git/user - Get authenticated GitHub user info
+app.get('/api/git/user', async (req, res) => {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    return res.status(401).json({ error: 'GitHub token not configured' });
+  }
+
+  try {
+    const response = await fetch('https://api.github.com/user', {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'ARCHITECT-Sandbox'
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      return res.status(response.status).json({ error: `GitHub API error: ${error}` });
+    }
+
+    const user = await response.json();
+    res.json({
+      login: user.login,
+      name: user.name,
+      avatar_url: user.avatar_url,
+      html_url: user.html_url,
+      public_repos: user.public_repos,
+      total_private_repos: user.total_private_repos
+    });
+  } catch (err) {
+    logger.error('GIT', 'Failed to fetch user', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ==================== Start ====================

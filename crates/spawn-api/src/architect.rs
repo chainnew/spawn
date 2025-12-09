@@ -459,6 +459,346 @@ pub async fn chat_to_mission(
 }
 
 // ============================================
+// Git Operations (Rust-native)
+// ============================================
+
+#[derive(Debug, Deserialize)]
+pub struct GitStatusRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GitStatusResponse {
+    pub branch: String,
+    pub remote: Option<String>,
+    pub staged: Vec<String>,
+    pub unstaged: Vec<String>,
+    pub untracked: Vec<String>,
+    pub recent_commits: Vec<String>,
+}
+
+/// Get git status for a repository
+pub async fn git_status(
+    State(state): State<AppState>,
+    Json(req): Json<GitStatusRequest>,
+) -> impl IntoResponse {
+    let repo_path = state.workspace_root.join(&req.path);
+
+    // Check if .git exists
+    if !repo_path.join(".git").exists() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "error": "Not a git repository"
+        }))).into_response();
+    }
+
+    async fn run_git(args: &[&str], cwd: &std::path::Path) -> (String, String, bool) {
+        match tokio::process::Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .output()
+            .await
+        {
+            Ok(output) => (
+                String::from_utf8_lossy(&output.stdout).trim().to_string(),
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+                output.status.success(),
+            ),
+            Err(e) => (String::new(), e.to_string(), false),
+        }
+    }
+
+    let (branch, _, _) = run_git(&["rev-parse", "--abbrev-ref", "HEAD"], &repo_path).await;
+    let (remote, _, _) = run_git(&["remote", "get-url", "origin"], &repo_path).await;
+    let (status_out, _, _) = run_git(&["status", "--porcelain"], &repo_path).await;
+    let (log_out, _, _) = run_git(&["log", "--oneline", "-5"], &repo_path).await;
+
+    let lines: Vec<&str> = status_out.lines().filter(|l| !l.is_empty()).collect();
+
+    let staged: Vec<String> = lines.iter()
+        .filter(|l| l.starts_with(|c: char| c.is_ascii_uppercase() && c != '?'))
+        .map(|l| l.get(3..).unwrap_or("").to_string())
+        .collect();
+
+    let unstaged: Vec<String> = lines.iter()
+        .filter(|l| l.chars().nth(1).map(|c| c.is_ascii_uppercase() && c != '?').unwrap_or(false))
+        .map(|l| l.get(3..).unwrap_or("").to_string())
+        .collect();
+
+    let untracked: Vec<String> = lines.iter()
+        .filter(|l| l.starts_with("??"))
+        .map(|l| l.get(3..).unwrap_or("").to_string())
+        .collect();
+
+    let recent_commits: Vec<String> = log_out.lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| l.to_string())
+        .collect();
+
+    (StatusCode::OK, Json(GitStatusResponse {
+        branch,
+        remote: if remote.is_empty() { None } else { Some(remote) },
+        staged,
+        unstaged,
+        untracked,
+        recent_commits,
+    })).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GitCloneRequest {
+    pub repo: String,
+    pub target: Option<String>,
+    pub depth: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GitCloneResponse {
+    pub success: bool,
+    pub path: String,
+    pub message: String,
+}
+
+/// Clone a git repository
+pub async fn git_clone(
+    State(state): State<AppState>,
+    Json(req): Json<GitCloneRequest>,
+) -> impl IntoResponse {
+    let mut repo_url = req.repo.clone();
+
+    // Convert shorthand to full URL
+    if !repo_url.contains("://") && !repo_url.starts_with("git@") {
+        repo_url = format!("https://github.com/{}.git", repo_url);
+    }
+
+    // Inject token for private repos
+    if let Ok(token) = std::env::var("GITHUB_TOKEN") {
+        if repo_url.contains("github.com") && repo_url.starts_with("https://") {
+            repo_url = repo_url.replace("https://github.com", &format!("https://{}@github.com", token));
+        }
+    }
+
+    let target_dir = req.target.unwrap_or_else(|| {
+        req.repo.split('/').last().unwrap_or("repo").replace(".git", "")
+    });
+
+    let mut args = vec!["clone".to_string()];
+    if let Some(depth) = req.depth {
+        args.push("--depth".to_string());
+        args.push(depth.to_string());
+    }
+    args.push(repo_url);
+    args.push(target_dir.clone());
+
+    let output = tokio::process::Command::new("git")
+        .args(&args)
+        .current_dir(&state.workspace_root)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .await;
+
+    match output {
+        Ok(out) if out.status.success() => {
+            (StatusCode::OK, Json(GitCloneResponse {
+                success: true,
+                path: target_dir,
+                message: String::from_utf8_lossy(&out.stderr).to_string(),
+            })).into_response()
+        }
+        Ok(out) => {
+            (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+                "error": String::from_utf8_lossy(&out.stderr).to_string()
+            }))).into_response()
+        }
+        Err(e) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": e.to_string()
+            }))).into_response()
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GitCommitRequest {
+    pub path: String,
+    pub message: String,
+    pub files: Option<Vec<String>>,
+}
+
+/// Create a git commit
+pub async fn git_commit(
+    State(state): State<AppState>,
+    Json(req): Json<GitCommitRequest>,
+) -> impl IntoResponse {
+    let repo_path = state.workspace_root.join(&req.path);
+
+    // Stage files
+    let add_args: Vec<&str> = if let Some(ref files) = req.files {
+        let mut args = vec!["add"];
+        args.extend(files.iter().map(|s| s.as_str()));
+        args
+    } else {
+        vec!["add", "-A"]
+    };
+
+    let add_output = tokio::process::Command::new("git")
+        .args(&add_args)
+        .current_dir(&repo_path)
+        .output()
+        .await;
+
+    if let Ok(out) = &add_output {
+        if !out.status.success() {
+            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+                "error": String::from_utf8_lossy(&out.stderr).to_string()
+            }))).into_response();
+        }
+    }
+
+    // Commit
+    let commit_output = tokio::process::Command::new("git")
+        .args(["commit", "-m", &req.message])
+        .current_dir(&repo_path)
+        .output()
+        .await;
+
+    match commit_output {
+        Ok(out) if out.status.success() => {
+            // Get commit hash
+            let hash_out = tokio::process::Command::new("git")
+                .args(["rev-parse", "--short", "HEAD"])
+                .current_dir(&repo_path)
+                .output()
+                .await
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default();
+
+            (StatusCode::OK, Json(serde_json::json!({
+                "success": true,
+                "commit": hash_out,
+                "message": String::from_utf8_lossy(&out.stdout).to_string()
+            }))).into_response()
+        }
+        Ok(out) => {
+            (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+                "error": String::from_utf8_lossy(&out.stderr).to_string()
+            }))).into_response()
+        }
+        Err(e) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": e.to_string()
+            }))).into_response()
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GitPushRequest {
+    pub path: String,
+    pub branch: Option<String>,
+    pub force: Option<bool>,
+}
+
+/// Push to remote
+pub async fn git_push(
+    State(state): State<AppState>,
+    Json(req): Json<GitPushRequest>,
+) -> impl IntoResponse {
+    let repo_path = state.workspace_root.join(&req.path);
+
+    let token = match std::env::var("GITHUB_TOKEN") {
+        Ok(t) => t,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "error": "GITHUB_TOKEN not configured"
+        }))).into_response(),
+    };
+
+    let mut args = vec!["push".to_string()];
+    if let Some(ref branch) = req.branch {
+        args.push("origin".to_string());
+        args.push(branch.clone());
+    }
+    if req.force.unwrap_or(false) {
+        args.push("--force".to_string());
+    }
+
+    let output = tokio::process::Command::new("git")
+        .args(&args)
+        .current_dir(&repo_path)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_ASKPASS", "echo")
+        .env("GIT_USERNAME", "oauth2")
+        .env("GIT_PASSWORD", &token)
+        .output()
+        .await;
+
+    match output {
+        Ok(out) if out.status.success() => {
+            (StatusCode::OK, Json(serde_json::json!({
+                "success": true,
+                "message": String::from_utf8_lossy(&out.stderr).to_string()
+            }))).into_response()
+        }
+        Ok(out) => {
+            (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+                "error": String::from_utf8_lossy(&out.stderr).to_string()
+            }))).into_response()
+        }
+        Err(e) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": e.to_string()
+            }))).into_response()
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GitPullRequest {
+    pub path: String,
+    pub branch: Option<String>,
+}
+
+/// Pull from remote
+pub async fn git_pull(
+    State(state): State<AppState>,
+    Json(req): Json<GitPullRequest>,
+) -> impl IntoResponse {
+    let repo_path = state.workspace_root.join(&req.path);
+
+    let mut args = vec!["pull".to_string()];
+    if let Some(ref branch) = req.branch {
+        args.push("origin".to_string());
+        args.push(branch.clone());
+    }
+
+    let output = tokio::process::Command::new("git")
+        .args(&args)
+        .current_dir(&repo_path)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .await;
+
+    match output {
+        Ok(out) if out.status.success() => {
+            (StatusCode::OK, Json(serde_json::json!({
+                "success": true,
+                "message": String::from_utf8_lossy(&out.stdout).to_string()
+            }))).into_response()
+        }
+        Ok(out) => {
+            (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+                "error": String::from_utf8_lossy(&out.stderr).to_string()
+            }))).into_response()
+        }
+        Err(e) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": e.to_string()
+            }))).into_response()
+        }
+    }
+}
+
+// ============================================
 // ARCHITECT Status
 // ============================================
 
@@ -520,6 +860,11 @@ pub async fn status(State(state): State<AppState>) -> impl IntoResponse {
             "terminal_buffer",
             "terminal_list",
             "chat_to_mission",
+            "git_status",
+            "git_clone",
+            "git_commit",
+            "git_push",
+            "git_pull",
         ],
         active_terminals,
         active_missions,

@@ -118,6 +118,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/architect/terminal/buffer", get(architect::terminal_buffer))
         .route("/api/architect/terminal/list", get(architect::list_terminals))
         .route("/api/architect/mission", post(architect::chat_to_mission))
+        // Git operations
+        .route("/api/architect/git/status", post(architect::git_status))
+        .route("/api/architect/git/clone", post(architect::git_clone))
+        .route("/api/architect/git/commit", post(architect::git_commit))
+        .route("/api/architect/git/push", post(architect::git_push))
+        .route("/api/architect/git/pull", post(architect::git_pull))
         // Semantic Search API (pgvector)
         .route("/api/search", get(search::search))
         .route("/api/search/code", get(search::search_code))

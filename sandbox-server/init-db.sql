@@ -315,6 +315,280 @@ semantic_search({
 });',
 'javascript', ARRAY['knowledge', 'semantic-search', 'documentation'], 'Remember the project architecture');
 
+-- Advanced Visualization Examples (D3.js, Three.js, WebGL)
+INSERT INTO examples (scope_id, title, description, code, language, tags, user_request) VALUES
+(4, 'D3.js Bar Chart', 'Creating an animated bar chart with D3.js',
+'// User: "Create a bar chart showing sales data"
+const data = [
+  { month: "Jan", sales: 65 },
+  { month: "Feb", sales: 59 },
+  { month: "Mar", sales: 80 },
+  { month: "Apr", sales: 81 },
+  { month: "May", sales: 56 },
+  { month: "Jun", sales: 95 }
+];
+
+const { svg, g, innerWidth, innerHeight } = createChart({ width: 700, height: 400 });
+
+const x = d3.scaleBand()
+  .domain(data.map(d => d.month))
+  .range([0, innerWidth])
+  .padding(0.2);
+
+const y = d3.scaleLinear()
+  .domain([0, d3.max(data, d => d.sales)])
+  .nice()
+  .range([innerHeight, 0]);
+
+// Add grid
+addGrid(g, x, y, innerWidth, innerHeight);
+
+// Add axes
+g.append("g").attr("class", "axis").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(x));
+g.append("g").attr("class", "axis").call(d3.axisLeft(y));
+
+// Add bars with animation
+g.selectAll(".bar")
+  .data(data)
+  .enter().append("rect")
+  .attr("class", "bar")
+  .attr("x", d => x(d.month))
+  .attr("width", x.bandwidth())
+  .attr("y", innerHeight)
+  .attr("height", 0)
+  .attr("fill", (d, i) => colors.categorical[i % 10])
+  .on("mouseover", (event, d) => showTooltip(`${d.month}: $${d.sales}k`, event))
+  .on("mouseout", hideTooltip)
+  .transition()
+  .duration(800)
+  .delay((d, i) => i * 100)
+  .attr("y", d => y(d.sales))
+  .attr("height", d => innerHeight - y(d.sales));',
+'javascript', ARRAY['d3', 'bar-chart', 'data-visualization', 'animation'], 'Create a bar chart showing sales data'),
+
+(4, 'D3.js Force-Directed Graph', 'Creating an interactive network graph',
+'// User: "Show a network diagram of connections"
+const nodes = [
+  { id: "A", group: 1 }, { id: "B", group: 1 }, { id: "C", group: 2 },
+  { id: "D", group: 2 }, { id: "E", group: 3 }, { id: "F", group: 3 }
+];
+const links = [
+  { source: "A", target: "B" }, { source: "A", target: "C" },
+  { source: "B", target: "D" }, { source: "C", target: "E" },
+  { source: "D", target: "E" }, { source: "E", target: "F" }
+];
+
+const width = 600, height = 400;
+const svg = d3.select("#chart").append("svg")
+  .attr("width", width).attr("height", height);
+
+const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+const simulation = d3.forceSimulation(nodes)
+  .force("link", d3.forceLink(links).id(d => d.id).distance(100))
+  .force("charge", d3.forceManyBody().strength(-200))
+  .force("center", d3.forceCenter(width / 2, height / 2));
+
+const link = svg.append("g").selectAll("line")
+  .data(links).enter().append("line")
+  .attr("stroke", "#666").attr("stroke-width", 2);
+
+const node = svg.append("g").selectAll("circle")
+  .data(nodes).enter().append("circle")
+  .attr("r", 20).attr("fill", d => color(d.group))
+  .call(d3.drag()
+    .on("start", (e, d) => { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+    .on("drag", (e, d) => { d.fx = e.x; d.fy = e.y; })
+    .on("end", (e, d) => { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+const labels = svg.append("g").selectAll("text")
+  .data(nodes).enter().append("text")
+  .text(d => d.id).attr("fill", "#fff").attr("text-anchor", "middle").attr("dy", 5);
+
+simulation.on("tick", () => {
+  link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+      .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+  node.attr("cx", d => d.x).attr("cy", d => d.y);
+  labels.attr("x", d => d.x).attr("y", d => d.y);
+});',
+'javascript', ARRAY['d3', 'network', 'force-directed', 'interactive'], 'Show a network diagram of connections'),
+
+(4, 'Three.js 3D Scene', 'Creating an interactive 3D scene with Three.js',
+'// User: "Create a 3D rotating cube"
+const { scene, camera, renderer, controls } = createScene();
+addLighting(scene);
+
+// Create a cube with gradient material
+const geometry = new THREE.BoxGeometry(2, 2, 2);
+const material = new THREE.MeshStandardMaterial({
+  color: 0xa855f7,
+  metalness: 0.3,
+  roughness: 0.5
+});
+const cube = new THREE.Mesh(geometry, material);
+cube.castShadow = true;
+scene.add(cube);
+
+// Add a floor
+const floorGeometry = new THREE.PlaneGeometry(10, 10);
+const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Animation loop
+function animate() {
+  requestAnimationFrame(animate);
+  cube.rotation.x += 0.01;
+  cube.rotation.y += 0.01;
+  controls.update();
+  updateStats();
+  renderer.render(scene, camera);
+}
+animate();',
+'javascript', ARRAY['threejs', '3d', 'cube', 'animation'], 'Create a 3D rotating cube'),
+
+(4, 'Three.js Particle System', 'Creating a particle system with Three.js',
+'// User: "Create a particle animation"
+const { scene, camera, renderer, controls } = createScene({ background: 0x000000 });
+camera.position.z = 50;
+
+// Create particles
+const particleCount = 5000;
+const positions = new Float32Array(particleCount * 3);
+const colors = new Float32Array(particleCount * 3);
+
+for (let i = 0; i < particleCount * 3; i += 3) {
+  positions[i] = (Math.random() - 0.5) * 100;
+  positions[i + 1] = (Math.random() - 0.5) * 100;
+  positions[i + 2] = (Math.random() - 0.5) * 100;
+
+  colors[i] = Math.random();
+  colors[i + 1] = Math.random() * 0.5 + 0.5;
+  colors[i + 2] = 1.0;
+}
+
+const geometry = new THREE.BufferGeometry();
+geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+const material = new THREE.PointsMaterial({
+  size: 0.5,
+  vertexColors: true,
+  transparent: true,
+  opacity: 0.8
+});
+
+const particles = new THREE.Points(geometry, material);
+scene.add(particles);
+
+function animate() {
+  requestAnimationFrame(animate);
+  particles.rotation.x += 0.001;
+  particles.rotation.y += 0.002;
+  controls.update();
+  updateStats();
+  renderer.render(scene, camera);
+}
+animate();',
+'javascript', ARRAY['threejs', 'particles', '3d', 'animation'], 'Create a particle animation'),
+
+(4, 'Diagram Flowchart', 'Creating a system architecture flowchart',
+'// User: "Create a flowchart for user authentication"
+addCluster("auth", "Authentication Flow");
+
+addNode("start", "User Login");
+addNode("validate", "Validate Credentials");
+addNode("check", "Check 2FA");
+addNode("success", "Grant Access");
+addNode("fail", "Deny Access");
+addNode("retry", "Retry?");
+
+addToCluster("validate", "auth");
+addToCluster("check", "auth");
+
+addEdge("start", "validate", "submit");
+addEdge("validate", "check", "valid");
+addEdge("validate", "fail", "invalid");
+addEdge("check", "success", "passed");
+addEdge("check", "retry", "failed");
+addEdge("retry", "start", "yes");
+addEdge("retry", "fail", "no");',
+'javascript', ARRAY['diagram', 'flowchart', 'authentication', 'architecture'], 'Create a flowchart for user authentication'),
+
+(4, 'Professional Word Document', 'Creating a corporate-style Word document from rough text',
+'// User: "Format this into a professional report"
+// Agent formats content using markdown with YAML front matter
+
+create_artifact({
+  type: "docx",
+  title: "Quarterly Business Report",
+  files: [{
+    path: "report.md",
+    language: "markdown",
+    content: `---
+title: Q4 2024 Business Performance Report
+subtitle: Strategic Analysis and Recommendations
+author: Strategy Team
+date: December 2024
+version: 1.0
+department: Business Intelligence
+classification: Internal
+---
+
+# Executive Summary
+
+This report provides a comprehensive analysis of Q4 2024 performance across all business units. **Key findings indicate a 23% revenue increase** compared to Q3, with significant growth in the enterprise segment.
+
+> [NOTE] This document contains confidential business information.
+
+## Key Metrics
+
+| Metric | Q3 2024 | Q4 2024 | Change |
+|--------|---------|---------|--------|
+| Revenue | $12.4M | $15.2M | +23% |
+| New Customers | 145 | 198 | +37% |
+| Retention Rate | 92% | 94% | +2% |
+| NPS Score | 67 | 72 | +5 |
+
+## Strategic Initiatives
+
+### 1. Product Development
+
+The engineering team successfully delivered:
+- New API gateway with 99.9% uptime
+- Mobile app v2.0 with redesigned UX
+- AI-powered recommendation engine
+
+### 2. Market Expansion
+
+Our expansion into APAC markets has shown promising results:
+
+1. Partnership with 3 regional distributors
+2. Localized product offerings for Japan and Singapore
+3. Established local support teams
+
+===
+
+# Recommendations
+
+Based on our analysis, we recommend the following actions for Q1 2025:
+
+* **Increase investment** in the enterprise sales team
+* Expand cloud infrastructure capacity by 40%
+* Launch customer success program for mid-market segment
+
+> [SUCCESS] All Q4 targets were met or exceeded.
+
+## Next Steps
+
+The leadership team should review these recommendations at the January planning session.`
+  }]
+});',
+'javascript', ARRAY['docx', 'word', 'document', 'report', 'corporate'], 'Format this rough report into a professional document');
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- SECTION 9: HELPER FUNCTIONS
 -- ═══════════════════════════════════════════════════════════════════════════════
