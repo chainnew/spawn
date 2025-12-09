@@ -1,0 +1,19 @@
+{
+  "sandbox_enabled": true,
+  "sandbox_endpoint": "http://localhost:3080",
+  "sandbox_max_iterations": 10,
+  "must_rules": [
+    "Always confirm before deleting files",
+    "Log all command executions",
+    "Use relative paths within workspace",
+    "Report errors immediately"
+  ],
+  "must_not_rules": [
+    "rm -rf /",
+    "sudo commands",
+    "chmod 777",
+    "Access outside workspace",
+    "Download from untrusted sources",
+    "Execute base64 encoded commands"
+  ]
+}

@@ -4,14 +4,19 @@
 
 mod terminal;
 mod files;
+mod admin;
+mod architect;
+mod search;
 
 use axum::{
+    body::Body,
     extract::State,
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use spawn_agents::{Database, Orchestrator};
 use spawn_ai::OpenRouterClient;
@@ -94,6 +99,36 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/missions", get(list_missions))
         // Chat (for AI assistant)
         .route("/api/chat", post(chat))
+        // Chat stream proxy to sandbox (Grok with tools)
+        .route("/api/chat/stream", post(chat_stream_proxy))
+        // Admin API endpoints
+        .route("/api/admin/status", get(admin::get_status))
+        .route("/api/admin/prompts", get(admin::get_prompts))
+        .route("/api/admin/prompts", post(admin::save_prompts))
+        .route("/api/admin/config", get(admin::get_config))
+        .route("/api/admin/config", post(admin::save_config))
+        // ARCHITECT API - Rust-native tool execution
+        .route("/api/architect/status", get(architect::status))
+        .route("/api/architect/exec", post(architect::exec_command))
+        .route("/api/architect/read", post(architect::read_file))
+        .route("/api/architect/write", post(architect::write_file))
+        .route("/api/architect/list", post(architect::list_files))
+        .route("/api/architect/terminal/create", post(architect::create_terminal))
+        .route("/api/architect/terminal/exec", post(architect::terminal_exec))
+        .route("/api/architect/terminal/buffer", get(architect::terminal_buffer))
+        .route("/api/architect/terminal/list", get(architect::list_terminals))
+        .route("/api/architect/mission", post(architect::chat_to_mission))
+        // Semantic Search API (pgvector)
+        .route("/api/search", get(search::search))
+        .route("/api/search/code", get(search::search_code))
+        .route("/api/search/index", post(search::index_file))
+        .route("/api/search/chat", post(search::store_chat))
+        .route("/api/search/context", get(search::get_chat_context))
+        .route("/api/search/status", get(search::search_status))
+        // Serve static UIs
+        .nest_service("/admin", ServeDir::new("web/admin"))
+        .nest_service("/sandbox", ServeDir::new("web/sandbox"))
+        .nest_service("/docs", ServeDir::new("web/docs"))
         // Serve static frontend (in production)
         .fallback_service(ServeDir::new("web/dist"))
         // Middleware
@@ -234,4 +269,53 @@ async fn chat(
         )
             .into_response(),
     }
+}
+
+// --- Chat Stream Proxy (routes to sandbox server for Grok + tools) ---
+
+#[derive(Debug, Deserialize)]
+struct ChatStreamRequest {
+    message: String,
+    #[serde(default)]
+    history: Vec<serde_json::Value>,
+}
+
+async fn chat_stream_proxy(
+    Json(payload): Json<ChatStreamRequest>,
+) -> impl IntoResponse {
+    let sandbox_endpoint = std::env::var("SANDBOX_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:3080".to_string());
+
+    let client = reqwest::Client::new();
+
+    // Forward request to sandbox server
+    let response = match client
+        .post(format!("{}/api/chat/stream", sandbox_endpoint))
+        .json(&serde_json::json!({
+            "message": payload.message,
+            "history": payload.history,
+        }))
+        .send()
+        .await
+    {
+        Ok(resp) => resp,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::BAD_GATEWAY)
+                .header("content-type", "text/event-stream")
+                .body(Body::from(format!("data: {{\"type\":\"error\",\"message\":\"{}\"}}\n\n", e)))
+                .unwrap();
+        }
+    };
+
+    // Stream the SSE response back
+    let stream = response.bytes_stream();
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "text/event-stream")
+        .header("cache-control", "no-cache")
+        .header("connection", "keep-alive")
+        .body(Body::from_stream(stream))
+        .unwrap()
 }

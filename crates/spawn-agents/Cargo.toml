@@ -3,6 +3,11 @@ name = "spawn-agents"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = ["sqlite"]
+sqlite = []
+postgres = ["pgvector"]
+
 [dependencies]
 spawn-core = { path = "../spawn-core" }
 spawn-ai = { path = "../spawn-ai" }
@@ -14,3 +19,6 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
+reqwest = { workspace = true }
+sha2 = "0.10"
+pgvector = { workspace = true, optional = true }

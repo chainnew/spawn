@@ -1,0 +1,49 @@
+# Spawn Agent - Caddy Configuration
+# Reverse proxy for local development
+
+:80 {
+    # Agent sandbox UI
+    handle /* {
+        reverse_proxy agent:3080
+    }
+
+    # WebSocket support for streaming
+    handle /api/chat/stream {
+        reverse_proxy agent:3080 {
+            flush_interval -1
+        }
+    }
+
+    # Artifact streaming
+    handle /api/artifacts/stream {
+        reverse_proxy agent:3080 {
+            flush_interval -1
+        }
+    }
+
+    # Health check endpoint
+    handle /health {
+        reverse_proxy agent:3080
+    }
+
+    # Logs
+    log {
+        output stdout
+        format console
+    }
+}
+
+# HTTPS for production (uncomment and set domain)
+# spawn.example.com {
+#     reverse_proxy agent:3080
+#
+#     # Enable compression
+#     encode gzip
+#
+#     # Security headers
+#     header {
+#         X-Content-Type-Options nosniff
+#         X-Frame-Options DENY
+#         Referrer-Policy strict-origin-when-cross-origin
+#     }
+# }

@@ -1,19 +1,11 @@
 #!/bin/bash
-# Spawn Sandbox Setup Script
-# Run this on your Kali VM to get everything running
-
+# Spawn Sandbox Setup - LOCAL MODE
 set -e
 
 echo "╔═══════════════════════════════════════════════════════════╗"
-echo "║         🐧 Spawn Sandbox Setup                            ║"
+echo "║         🐧 Spawn Sandbox Setup (Local Mode)               ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo ""
-
-# Check for podman
-if ! command -v podman &> /dev/null; then
-    echo "📦 Installing Podman..."
-    sudo apt-get update && sudo apt-get install -y podman
-fi
 
 # Check for node
 if ! command -v node &> /dev/null; then
@@ -22,47 +14,39 @@ if ! command -v node &> /dev/null; then
     sudo apt-get install -y nodejs
 fi
 
-# Create container if it doesn't exist
-CONTAINER_NAME="spawn-sandbox"
-if ! podman container exists $CONTAINER_NAME 2>/dev/null; then
-    echo "🐳 Creating Podman container..."
-    podman run -d \
-        --name $CONTAINER_NAME \
-        -v spawn-workspace:/workspace \
-        ubuntu:22.04 \
-        sleep infinity
-    
-    echo "📦 Installing tools in container..."
-    podman exec $CONTAINER_NAME apt-get update
-    podman exec $CONTAINER_NAME apt-get install -y git curl nodejs npm python3 python3-pip
-    podman exec $CONTAINER_NAME mkdir -p /workspace
-else
-    echo "✅ Container '$CONTAINER_NAME' already exists"
-    podman start $CONTAINER_NAME 2>/dev/null || true
-fi
-
 # Install npm dependencies
 echo "📦 Installing Node dependencies..."
 npm install
 
+# Create workspace
+mkdir -p ./public/workspace
+echo "✅ Created workspace at ./public/workspace"
+
 # Create .env if it doesn't exist
 if [ ! -f .env ]; then
-    echo "📝 Creating .env from template..."
-    cp .env.example .env
-    echo ""
-    echo "⚠️  Edit .env to add your API keys:"
-    echo "    OPENROUTER_API_KEY=sk-or-v1-xxx"
-    echo "    XAI_API_KEY=xai-xxx"
-    echo ""
+    cat > .env << 'ENVFILE'
+PORT=3080
+CONTAINER_NAME=
+WORKSPACE_PATH=./public/workspace
+OPENROUTER_API_KEY=
+OPENROUTER_REFERER=spawn-sandbox
+OPENROUTER_TITLE=spawn
+#XAI_API_KEY=
+ENVFILE
+fi
+
+# Prompt for API key
+echo ""
+read -p "Enter your OpenRouter API key (or press Enter to skip): " API_KEY
+if [ -n "$API_KEY" ]; then
+    sed -i "s|OPENROUTER_API_KEY=.*|OPENROUTER_API_KEY=$API_KEY|" .env
+    echo "✅ API key saved"
 fi
 
 echo ""
 echo "╔═══════════════════════════════════════════════════════════╗"
 echo "║  ✅ Setup complete!                                       ║"
 echo "║                                                           ║"
-echo "║  Start the server:                                        ║"
-echo "║    npm start                                              ║"
-echo "║                                                           ║"
-echo "║  Then open:                                               ║"
-echo "║    http://localhost:3080                                  ║"
+echo "║  Start: npm start                                         ║"
+echo "║  Open:  http://localhost:3080                             ║"
 echo "╚═══════════════════════════════════════════════════════════╝"

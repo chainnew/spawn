@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spawn Sandbox - Documentation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    body { background: #0a0a0a; color: #e5e5e5; }
+    .mermaid { background: #141414; border-radius: 12px; padding: 20px; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .tab-btn.active { background: #7c3aed; color: white; }
+  </style>
+</head>
+<body class="font-sans">
+  
+  <!-- Header -->
+  <header class="border-b border-gray-800 bg-gray-950 sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-6 py-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-xl">🐧</div>
+          <div>
+            <h1 class="text-xl font-bold text-white">Spawn Sandbox</h1>
+            <p class="text-xs text-gray-500">Documentation</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="px-2 py-1 bg-green-900/50 text-green-400 rounded">Local Mode</span>
+          <span class="px-2 py-1 bg-purple-900/50 text-purple-400 rounded">x-ai/grok-4.1-fast</span>
+        </div>
+      </div>
+      
+      <!-- Tabs -->
+      <div class="flex gap-2 mt-4">
+        <button onclick="showTab('routes')" class="tab-btn active px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 hover:bg-gray-700">
+          🛣️ Routes
+        </button>
+        <button onclick="showTab('files')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 hover:bg-gray-700">
+          📁 Files
+        </button>
+        <button onclick="showTab('flow')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 hover:bg-gray-700">
+          🔄 Flow
+        </button>
+        <button onclick="showTab('tools')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 hover:bg-gray-700">
+          🔧 Tools
+        </button>
+        <button onclick="showTab('config')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 hover:bg-gray-700">
+          ⚙️ Config
+        </button>
+        <button onclick="showTab('rust')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 hover:bg-gray-700">
+          🦀 Rust Backend
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-6 py-8">
+
+    <!-- ==================== ROUTES TAB ==================== -->
+    <div id="tab-routes" class="tab-content active">
+      <h2 class="text-2xl font-bold text-white mb-6">API Endpoints</h2>
+      
+      <!-- Architecture Diagram -->
+      <div class="mb-8">
+        <div class="mermaid">
+flowchart TB
+    subgraph Browser["🌐 Browser (React)"]
+        UI[Chat UI]
+        Artifacts[Artifact Renderer]
+    end
+    
+    subgraph Server["🖥️ Node.js Server :3080"]
+        Express[Express App]
+        LLM[LLM Proxy]
+        Tools[Tool Executor]
+    end
+    
+    subgraph Local["📂 Local Filesystem"]
+        Workspace[./public/workspace]
+    end
+    
+    subgraph External["☁️ External APIs"]
+        OpenRouter[OpenRouter API<br/>x-ai/grok-4.1-fast]
+    end
+    
+    UI -->|POST /api/chat/stream| Express
+    Express -->|SSE events| UI
+    Express --> LLM
+    LLM --> OpenRouter
+    Express --> Tools
+    Tools -->|bash commands| Local
+    Tools -->|file read/write| Local
+    Artifacts -.->|renders| UI
+    
+    style Browser fill:#1e1b4b,stroke:#7c3aed
+    style Server fill:#14532d,stroke:#22c55e
+    style External fill:#7c2d12,stroke:#f97316
+        </div>
+      </div>
+
+      <!-- Routes Table -->
+      <div class="overflow-hidden rounded-xl border border-gray-800">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-900">
+            <tr>
+              <th class="px-4 py-3 text-left text-purple-400">Method</th>
+              <th class="px-4 py-3 text-left text-purple-400">Endpoint</th>
+              <th class="px-4 py-3 text-left text-purple-400">Description</th>
+              <th class="px-4 py-3 text-left text-purple-400">Request Body</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800">
+            <tr class="bg-gray-950 hover:bg-gray-900">
+              <td class="px-4 py-3"><span class="px-2 py-1 bg-green-900 text-green-300 rounded text-xs">GET</span></td>
+              <td class="px-4 py-3 font-mono text-cyan-400">/health</td>
+              <td class="px-4 py-3 text-gray-300">Server health check</td>
+              <td class="px-4 py-3 text-gray-500">—</td>
+            </tr>
+            <tr class="bg-gray-900 hover:bg-gray-800">
+              <td class="px-4 py-3"><span class="px-2 py-1 bg-blue-900 text-blue-300 rounded text-xs">POST</span></td>
+              <td class="px-4 py-3 font-mono text-cyan-400">/api/chat/stream</td>
+              <td class="px-4 py-3 text-gray-300">Main chat endpoint (SSE)</td>
+              <td class="px-4 py-3 font-mono text-xs text-gray-400">{ message, history[] }</td>
+            </tr>
+            <tr class="bg-gray-950 hover:bg-gray-900">
+              <td class="px-4 py-3"><span class="px-2 py-1 bg-blue-900 text-blue-300 rounded text-xs">POST</span></td>
+              <td class="px-4 py-3 font-mono text-cyan-400">/api/sandbox/exec</td>
+              <td class="px-4 py-3 text-gray-300">Execute command (blocking)</td>
+              <td class="px-4 py-3 font-mono text-xs text-gray-400">{ command, cwd? }</td>
+            </tr>
+            <tr class="bg-gray-900 hover:bg-gray-800">
+              <td class="px-4 py-3"><span class="px-2 py-1 bg-blue-900 text-blue-300 rounded text-xs">POST</span></td>
+              <td class="px-4 py-3 font-mono text-cyan-400">/api/sandbox/exec/stream</td>
+              <td class="px-4 py-3 text-gray-300">Execute command (SSE stream)</td>
+              <td class="px-4 py-3 font-mono text-xs text-gray-400">{ command, cwd? }</td>
+            </tr>
+            <tr class="bg-gray-950 hover:bg-gray-900">
+              <td class="px-4 py-3"><span class="px-2 py-1 bg-green-900 text-green-300 rounded text-xs">GET</span></td>
+              <td class="px-4 py-3 font-mono text-cyan-400">/api/workspaces</td>
+              <td class="px-4 py-3 text-gray-300">List workspace projects</td>
+              <td class="px-4 py-3 text-gray-500">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- SSE Events -->
+      <h3 class="text-xl font-semibold text-white mt-8 mb-4">SSE Event Types</h3>
+      <div class="grid grid-cols-3 gap-3">
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <h4 class="text-green-400 font-mono text-sm mb-1">thinking</h4>
+          <pre class="text-xs text-gray-500">{ iteration: 1 }</pre>
+        </div>
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <h4 class="text-yellow-400 font-mono text-sm mb-1">tool_start</h4>
+          <pre class="text-xs text-gray-500">{ tool, args }</pre>
+        </div>
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <h4 class="text-cyan-400 font-mono text-sm mb-1">tool_result</h4>
+          <pre class="text-xs text-gray-500">{ tool, result }</pre>
+        </div>
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <h4 class="text-purple-400 font-mono text-sm mb-1">artifact</h4>
+          <pre class="text-xs text-gray-500">{ type, title, content }</pre>
+        </div>
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <h4 class="text-blue-400 font-mono text-sm mb-1">response</h4>
+          <pre class="text-xs text-gray-500">{ content }</pre>
+        </div>
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <h4 class="text-gray-400 font-mono text-sm mb-1">done</h4>
+          <pre class="text-xs text-gray-500">{ iterations }</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== FILES TAB ==================== -->
+    <div id="tab-files" class="tab-content">
+      <h2 class="text-2xl font-bold text-white mb-6">File Reference</h2>
+      
+      <!-- File Tree -->
+      <div class="grid grid-cols-2 gap-6">
+        <div>
+          <h3 class="text-lg font-semibold text-purple-400 mb-3">📂 Project Structure</h3>
+          <pre class="bg-gray-900 rounded-xl p-4 text-sm font-mono border border-gray-800">
+<span class="text-yellow-400">sandbox-server/</span>
+├── <span class="text-cyan-400">server.js</span>         <span class="text-gray-600"># Backend</span>
+├── <span class="text-cyan-400">package.json</span>
+├── <span class="text-cyan-400">.env</span>              <span class="text-gray-600"># Config</span>
+├── <span class="text-cyan-400">setup.sh</span>          <span class="text-gray-600"># Setup</span>
+└── <span class="text-yellow-400">public/</span>
+    ├── <span class="text-cyan-400">index.html</span>    <span class="text-gray-600"># Frontend</span>
+    └── <span class="text-yellow-400">workspace/</span>    <span class="text-gray-600"># Sandbox</span>
+          </pre>
+        </div>
+        
+        <div>
+          <h3 class="text-lg font-semibold text-purple-400 mb-3">🔗 File Locations on VM</h3>
+          <pre class="bg-gray-900 rounded-xl p-4 text-sm font-mono border border-gray-800">
+<span class="text-gray-500"># Kali VM paths</span>
+<span class="text-cyan-400">/home/spawn/spawn/sandbox-server/</span>
+
+<span class="text-gray-500"># Key files</span>
+<span class="text-green-400">server.js</span>      → Backend logic
+<span class="text-green-400">public/index.html</span> → React UI
+<span class="text-green-400">.env</span>           → API keys
+<span class="text-green-400">public/workspace/</span> → Grok's playground
+          </pre>
+        </div>
+      </div>
+
+      <!-- What to Edit -->
+      <h3 class="text-xl font-semibold text-white mt-8 mb-4">🔧 What to Edit</h3>
+      <div class="space-y-4">
+        
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-gray-800 px-4 py-2 flex items-center justify-between">
+            <span class="font-semibold text-white">Change System Prompt</span>
+            <span class="text-xs text-purple-400 font-mono">server.js</span>
+          </div>
+          <div class="p-4">
+            <p class="text-sm text-gray-400 mb-2">Edit the SYSTEM_PROMPT constant to change how Grok behaves:</p>
+            <pre class="bg-black/50 rounded-lg p-3 text-xs overflow-x-auto">
+<span class="text-gray-500">// server.js ~line 180</span>
+<span class="text-purple-400">const</span> <span class="text-cyan-400">SYSTEM_PROMPT</span> = <span class="text-green-400">`You are Grok, an AI coding assistant...`</span>;
+            </pre>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-gray-800 px-4 py-2 flex items-center justify-between">
+            <span class="font-semibold text-white">Change LLM Model</span>
+            <span class="text-xs text-purple-400 font-mono">server.js</span>
+          </div>
+          <div class="p-4">
+            <p class="text-sm text-gray-400 mb-2">Swap Grok for Claude, GPT-4, etc:</p>
+            <pre class="bg-black/50 rounded-lg p-3 text-xs overflow-x-auto">
+<span class="text-gray-500">// server.js ~line 195 in callLLM()</span>
+<span class="text-purple-400">const</span> body = { 
+  <span class="text-cyan-400">model</span>: <span class="text-green-400">'x-ai/grok-3-mini-beta'</span>,  <span class="text-gray-500">// ← change this</span>
+  messages, 
+  ...
+};
+
+<span class="text-gray-500">// Other options:</span>
+<span class="text-gray-500">// 'anthropic/claude-sonnet-4-20250514'</span>
+<span class="text-gray-500">// 'openai/gpt-4o'</span>
+<span class="text-gray-500">// 'deepseek/deepseek-chat'</span>
+            </pre>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-gray-800 px-4 py-2 flex items-center justify-between">
+            <span class="font-semibold text-white">Add New Tools</span>
+            <span class="text-xs text-purple-400 font-mono">server.js</span>
+          </div>
+          <div class="p-4">
+            <p class="text-sm text-gray-400 mb-2">Add to TOOLS array + executeTool switch:</p>
+            <pre class="bg-black/50 rounded-lg p-3 text-xs overflow-x-auto">
+<span class="text-gray-500">// server.js ~line 85 - Add to TOOLS array</span>
+{
+  <span class="text-cyan-400">type</span>: <span class="text-green-400">'function'</span>,
+  <span class="text-cyan-400">function</span>: {
+    <span class="text-cyan-400">name</span>: <span class="text-green-400">'my_new_tool'</span>,
+    <span class="text-cyan-400">description</span>: <span class="text-green-400">'What it does'</span>,
+    <span class="text-cyan-400">parameters</span>: { ... }
+  }
+}
+
+<span class="text-gray-500">// ~line 140 - Add to executeTool()</span>
+<span class="text-purple-400">case</span> <span class="text-green-400">'my_new_tool'</span>: {
+  <span class="text-gray-500">// your logic here</span>
+  <span class="text-purple-400">return</span> { success: <span class="text-orange-400">true</span>, data: ... };
+}
+            </pre>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-gray-800 px-4 py-2 flex items-center justify-between">
+            <span class="font-semibold text-white">Change UI Styling</span>
+            <span class="text-xs text-purple-400 font-mono">public/index.html</span>
+          </div>
+          <div class="p-4">
+            <p class="text-sm text-gray-400 mb-2">Tailwind config is at the top:</p>
+            <pre class="bg-black/50 rounded-lg p-3 text-xs overflow-x-auto">
+<span class="text-gray-500">// public/index.html ~line 8</span>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        spawn: { 
+          <span class="text-cyan-400">bg</span>: <span class="text-green-400">'#0a0a0a'</span>,      <span class="text-gray-500">// ← background</span>
+          <span class="text-cyan-400">surface</span>: <span class="text-green-400">'#141414'</span>, <span class="text-gray-500">// ← cards</span>
+          <span class="text-cyan-400">accent</span>: <span class="text-green-400">'#a855f7'</span>,  <span class="text-gray-500">// ← purple highlights</span>
+        }
+      }
+    }
+  }
+}
+            </pre>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-gray-800 px-4 py-2 flex items-center justify-between">
+            <span class="font-semibold text-white">Add New Artifact Type</span>
+            <span class="text-xs text-purple-400 font-mono">public/index.html</span>
+          </div>
+          <div class="p-4">
+            <p class="text-sm text-gray-400 mb-2">Add to generators object:</p>
+            <pre class="bg-black/50 rounded-lg p-3 text-xs overflow-x-auto">
+<span class="text-gray-500">// public/index.html ~line 35</span>
+<span class="text-purple-400">const</span> generators = {
+  react: (code) => ...,
+  html: (code) => ...,
+  <span class="text-cyan-400">mytype</span>: (code) => <span class="text-green-400">`&lt;!DOCTYPE html&gt;...${code}...`</span>,
+};
+            </pre>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-gray-800 px-4 py-2 flex items-center justify-between">
+            <span class="font-semibold text-white">Change API Keys</span>
+            <span class="text-xs text-purple-400 font-mono">.env</span>
+          </div>
+          <div class="p-4">
+            <pre class="bg-black/50 rounded-lg p-3 text-xs overflow-x-auto">
+<span class="text-cyan-400">OPENROUTER_API_KEY</span>=<span class="text-green-400">sk-or-v1-your-key-here</span>
+            </pre>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Quick Reference Table -->
+      <h3 class="text-xl font-semibold text-white mt-8 mb-4">📋 Quick Reference</h3>
+      <div class="overflow-hidden rounded-xl border border-gray-800">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-900">
+            <tr>
+              <th class="px-4 py-3 text-left text-purple-400">I want to...</th>
+              <th class="px-4 py-3 text-left text-purple-400">Edit this file</th>
+              <th class="px-4 py-3 text-left text-purple-400">Look for</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800">
+            <tr class="bg-gray-950"><td class="px-4 py-3">Change system prompt</td><td class="px-4 py-3 font-mono text-cyan-400">server.js</td><td class="px-4 py-3 text-gray-400">SYSTEM_PROMPT</td></tr>
+            <tr class="bg-gray-900"><td class="px-4 py-3">Change LLM model</td><td class="px-4 py-3 font-mono text-cyan-400">server.js</td><td class="px-4 py-3 text-gray-400">callLLM() → model:</td></tr>
+            <tr class="bg-gray-950"><td class="px-4 py-3">Add a tool</td><td class="px-4 py-3 font-mono text-cyan-400">server.js</td><td class="px-4 py-3 text-gray-400">TOOLS + executeTool()</td></tr>
+            <tr class="bg-gray-900"><td class="px-4 py-3">Change UI colors</td><td class="px-4 py-3 font-mono text-cyan-400">public/index.html</td><td class="px-4 py-3 text-gray-400">tailwind.config</td></tr>
+            <tr class="bg-gray-950"><td class="px-4 py-3">Add artifact type</td><td class="px-4 py-3 font-mono text-cyan-400">public/index.html</td><td class="px-4 py-3 text-gray-400">generators = {}</td></tr>
+            <tr class="bg-gray-900"><td class="px-4 py-3">Change API key</td><td class="px-4 py-3 font-mono text-cyan-400">.env</td><td class="px-4 py-3 text-gray-400">OPENROUTER_API_KEY</td></tr>
+            <tr class="bg-gray-950"><td class="px-4 py-3">Change port</td><td class="px-4 py-3 font-mono text-cyan-400">.env</td><td class="px-4 py-3 text-gray-400">PORT</td></tr>
+            <tr class="bg-gray-900"><td class="px-4 py-3">Change workspace path</td><td class="px-4 py-3 font-mono text-cyan-400">.env</td><td class="px-4 py-3 text-gray-400">WORKSPACE_PATH</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ==================== FLOW TAB ==================== -->
+    <div id="tab-flow" class="tab-content">
+      <h2 class="text-2xl font-bold text-white mb-6">Message Flow</h2>
+      
+      <div class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant F as Frontend<br/>(index.html)
+    participant S as Server<br/>(server.js)
+    participant G as Grok via OpenRouter
+    participant T as Tools
+    
+    U->>F: Type message + Send
+    F->>S: POST /api/chat/stream
+    Note over S: Build messages array
+    S->>G: { messages, tools }
+    G-->>S: response (with tool_calls?)
+    
+    alt Has tool_calls
+        loop For each tool
+            S->>T: execute_command / read_file / etc
+            T-->>S: result
+            S-->>F: SSE: tool_start
+            S-->>F: SSE: tool_result
+            Note over S: Add tool result to messages
+            S->>G: Continue with tool results
+            G-->>S: Next response
+        end
+    end
+    
+    G-->>S: Final response (no tools)
+    S-->>F: SSE: response
+    S-->>F: SSE: done
+    F->>U: Render message + artifacts
+      </div>
+
+      <h3 class="text-xl font-semibold text-white mt-8 mb-4">Tool Execution Flow</h3>
+      <div class="mermaid">
+flowchart LR
+    subgraph Server["server.js"]
+        A[Receive tool_call] --> B{Which tool?}
+        B -->|execute_command| C[runExec]
+        B -->|read_file| D[fs.readFileSync]
+        B -->|write_file| E[fs.writeFileSync]
+        B -->|list_files| F[runExec ls/find]
+        B -->|create_artifact| G[Return artifact object]
+        C --> H[Return result]
+        D --> H
+        E --> H
+        F --> H
+        G --> H
+    end
+    
+    H --> I[Send to Grok]
+    I --> J{More tools?}
+    J -->|Yes| A
+    J -->|No| K[Final response]
+      </div>
+    </div>
+
+    <!-- ==================== TOOLS TAB ==================== -->
+    <div id="tab-tools" class="tab-content">
+      <h2 class="text-2xl font-bold text-white mb-6">Available Tools</h2>
+      <p class="text-gray-400 mb-6">These are the tools Grok can call to interact with your system.</p>
+      
+      <div class="space-y-4">
+        <div class="bg-gray-900 rounded-xl p-5 border border-gray-800">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="text-2xl">⚡</span>
+            <span class="text-xl font-semibold text-orange-400 font-mono">execute_command</span>
+          </div>
+          <p class="text-gray-400 mb-3">Run any bash command in the workspace</p>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <div class="text-xs text-gray-500 mb-1">Parameters</div>
+              <pre class="bg-black/50 rounded p-2 text-xs text-green-400">{ command: string, cwd?: string }</pre>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 mb-1">Example</div>
+              <pre class="bg-black/50 rounded p-2 text-xs text-cyan-400">{ command: "npm install express" }</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 rounded-xl p-5 border border-gray-800">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="text-2xl">📖</span>
+            <span class="text-xl font-semibold text-blue-400 font-mono">read_file</span>
+          </div>
+          <p class="text-gray-400 mb-3">Read contents of a file</p>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <div class="text-xs text-gray-500 mb-1">Parameters</div>
+              <pre class="bg-black/50 rounded p-2 text-xs text-green-400">{ path: string }</pre>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 mb-1">Example</div>
+              <pre class="bg-black/50 rounded p-2 text-xs text-cyan-400">{ path: "src/index.js" }</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 rounded-xl p-5 border border-gray-800">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="text-2xl">✏️</span>
+            <span class="text-xl font-semibold text-green-400 font-mono">write_file</span>
+          </div>
+          <p class="text-gray-400 mb-3">Create or overwrite a file</p>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <div class="text-xs text-gray-500 mb-1">Parameters</div>
+              <pre class="bg-black/50 rounded p-2 text-xs text-green-400">{ path: string, content: string }</pre>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 mb-1">Example</div>
+              <pre class="bg-black/50 rounded p-2 text-xs text-cyan-400">{ path: "hello.py", content: "print('hi')" }</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 rounded-xl p-5 border border-gray-800">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="text-2xl">📁</span>
+            <span class="text-xl font-semibold text-yellow-400 font-mono">list_files</span>
+          </div>
+          <p class="text-gray-400 mb-3">List directory contents</p>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <div class="text-xs text-gray-500 mb-1">Parameters</div>
+              <pre class="bg-black/50 rounded p-2 text-xs text-green-400">{ path?: string, recursive?: boolean }</pre>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 mb-1">Example</div>
+              <pre class="bg-black/50 rounded p-2 text-xs text-cyan-400">{ path: ".", recursive: true }</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 rounded-xl p-5 border border-gray-800">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="text-2xl">🎨</span>
+            <span class="text-xl font-semibold text-purple-400 font-mono">create_artifact</span>
+          </div>
+          <p class="text-gray-400 mb-3">Render visual content in the UI (React, HTML, Mermaid, etc.)</p>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <div class="text-xs text-gray-500 mb-1">Parameters</div>
+              <pre class="bg-black/50 rounded p-2 text-xs text-green-400">{ type: string, title: string, content: string, lang?: string }</pre>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 mb-1">Types</div>
+              <div class="flex flex-wrap gap-1 mt-1">
+                <span class="px-2 py-0.5 bg-purple-900/50 text-purple-300 rounded text-xs">react</span>
+                <span class="px-2 py-0.5 bg-purple-900/50 text-purple-300 rounded text-xs">html</span>
+                <span class="px-2 py-0.5 bg-purple-900/50 text-purple-300 rounded text-xs">mermaid</span>
+                <span class="px-2 py-0.5 bg-purple-900/50 text-purple-300 rounded text-xs">svg</span>
+                <span class="px-2 py-0.5 bg-purple-900/50 text-purple-300 rounded text-xs">markdown</span>
+                <span class="px-2 py-0.5 bg-purple-900/50 text-purple-300 rounded text-xs">code</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== CONFIG TAB ==================== -->
+    <div id="tab-config" class="tab-content">
+      <h2 class="text-2xl font-bold text-white mb-6">Configuration</h2>
+      
+      <div class="grid grid-cols-2 gap-6">
+        <div>
+          <h3 class="text-lg font-semibold text-purple-400 mb-3">📄 .env File</h3>
+          <pre class="bg-gray-900 rounded-xl p-4 text-sm font-mono border border-gray-800">
+<span class="text-gray-500"># Server</span>
+<span class="text-cyan-400">PORT</span>=<span class="text-green-400">3080</span>
+
+<span class="text-gray-500"># Local mode (empty = no container)</span>
+<span class="text-cyan-400">CONTAINER_NAME</span>=
+
+<span class="text-gray-500"># Workspace path</span>
+<span class="text-cyan-400">WORKSPACE_PATH</span>=<span class="text-green-400">./public/workspace</span>
+
+<span class="text-gray-500"># OpenRouter (for Grok)</span>
+<span class="text-cyan-400">OPENROUTER_API_KEY</span>=<span class="text-green-400">sk-or-v1-xxx</span>
+<span class="text-cyan-400">OPENROUTER_REFERER</span>=<span class="text-green-400">grok-4.1-fast</span>
+<span class="text-cyan-400">OPENROUTER_TITLE</span>=<span class="text-green-400">spawn-sandbox</span>
+          </pre>
+        </div>
+        
+        <div>
+          <h3 class="text-lg font-semibold text-purple-400 mb-3">🚀 Start Commands</h3>
+          <pre class="bg-gray-900 rounded-xl p-4 text-sm font-mono border border-gray-800">
+<span class="text-gray-500"># Start server</span>
+<span class="text-cyan-400">npm start</span>
+
+<span class="text-gray-500"># Or with node directly</span>
+<span class="text-cyan-400">node server.js</span>
+
+<span class="text-gray-500"># Development with auto-restart</span>
+<span class="text-cyan-400">npx nodemon server.js</span>
+
+<span class="text-gray-500"># Check if running</span>
+<span class="text-cyan-400">curl http://localhost:3080/health</span>
+          </pre>
+        </div>
+      </div>
+
+      <h3 class="text-lg font-semibold text-purple-400 mt-8 mb-3">🌐 Access URLs</h3>
+      <div class="grid grid-cols-3 gap-4">
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <div class="text-sm text-gray-500 mb-1">Local</div>
+          <code class="text-cyan-400">http://localhost:3080</code>
+        </div>
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <div class="text-sm text-gray-500 mb-1">From Mac (VM IP)</div>
+          <code class="text-cyan-400">http://192.168.43.131:3080</code>
+        </div>
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <div class="text-sm text-gray-500 mb-1">Health Check</div>
+          <code class="text-cyan-400">/health</code>
+        </div>
+      </div>
+
+      <h3 class="text-lg font-semibold text-purple-400 mt-8 mb-3">🔧 Troubleshooting</h3>
+      <div class="space-y-3">
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <div class="font-semibold text-red-400 mb-1">❌ "No API key configured"</div>
+          <p class="text-sm text-gray-400">Check .env has OPENROUTER_API_KEY set</p>
+        </div>
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <div class="font-semibold text-red-400 mb-1">❌ "ENOENT" or file not found</div>
+          <p class="text-sm text-gray-400">Make sure ./public/workspace exists: <code class="text-cyan-400">mkdir -p public/workspace</code></p>
+        </div>
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <div class="font-semibold text-red-400 mb-1">❌ Port already in use</div>
+          <p class="text-sm text-gray-400">Change PORT in .env or kill existing: <code class="text-cyan-400">lsof -ti:3080 | xargs kill</code></p>
+        </div>
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <div class="font-semibold text-red-400 mb-1">❌ Commands not executing</div>
+          <p class="text-sm text-gray-400">Ensure CONTAINER_NAME is empty in .env for local mode</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== RUST TAB ==================== -->
+    <div id="tab-rust" class="tab-content">
+      <h2 class="text-2xl font-bold text-white mb-6">🦀 Rust Backend (spawn-api)</h2>
+      <p class="text-gray-400 mb-6">The main spawn.new backend - Axum server with WebSocket terminal, file ops, and agent orchestration.</p>
+      
+      <!-- Architecture -->
+      <div class="mb-8">
+        <div class="mermaid">
+flowchart TB
+    subgraph Frontend["🌐 React Frontend (web/)"]
+        Chat[Chat.tsx]
+        App[App.tsx]
+    end
+    
+    subgraph Rust["🦀 Rust Backend :3000"]
+        Axum[Axum Server]
+        Orchestrator[Orchestrator]
+        Agents[spawn-agents]
+        AI[spawn-ai]
+    end
+    
+    subgraph External["☁️ OpenRouter"]
+        OR[x-ai/grok-3-mini-beta]
+    end
+    
+    Chat -->|POST /api/chat| Axum
+    Chat -->|POST /api/agent| Axum
+    App -->|WS /ws/terminal| Axum
+    Axum --> Orchestrator
+    Orchestrator --> Agents
+    Axum --> AI
+    AI --> OR
+    
+    style Frontend fill:#1e1b4b,stroke:#7c3aed
+    style Rust fill:#7c2d12,stroke:#f97316
+        </div>
+      </div>
+
+      <!-- Crate Structure -->
+      <div class="grid grid-cols-2 gap-6 mb-8">
+        <div>
+          <h3 class="text-lg font-semibold text-orange-400 mb-3">📦 Crate Structure</h3>
+          <pre class="bg-gray-900 rounded-xl p-4 text-sm font-mono border border-gray-800">
+<span class="text-yellow-400">/Volumes/Iron/spawn/</span>
+├── <span class="text-yellow-400">crates/</span>
+│   ├── <span class="text-orange-400">spawn-api/</span>        <span class="text-gray-600"># Axum server</span>
+│   │   └── src/
+│   │       ├── <span class="text-cyan-400">main.rs</span>    <span class="text-gray-600"># Routes + handlers</span>
+│   │       ├── <span class="text-cyan-400">terminal.rs</span> <span class="text-gray-600"># WebSocket PTY</span>
+│   │       └── <span class="text-cyan-400">files.rs</span>   <span class="text-gray-600"># File operations</span>
+│   ├── <span class="text-orange-400">spawn-ai/</span>         <span class="text-gray-600"># LLM client</span>
+│   │   └── src/
+│   │       ├── <span class="text-cyan-400">lib.rs</span>
+│   │       └── <span class="text-cyan-400">openrouter.rs</span>
+│   ├── <span class="text-orange-400">spawn-agents/</span>     <span class="text-gray-600"># Agent orchestration</span>
+│   └── <span class="text-orange-400">spawn-core/</span>       <span class="text-gray-600"># Shared types</span>
+├── <span class="text-yellow-400">web/</span>                 <span class="text-gray-600"># React frontend</span>
+│   └── src/
+│       ├── <span class="text-cyan-400">App.tsx</span>
+│       └── components/
+│           └── <span class="text-cyan-400">Chat.tsx</span>
+└── <span class="text-cyan-400">Cargo.toml</span>
+          </pre>
+        </div>
+        
+        <div>
+          <h3 class="text-lg font-semibold text-orange-400 mb-3">🌐 API Endpoints</h3>
+          <div class="overflow-hidden rounded-xl border border-gray-800">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-900">
+                <tr>
+                  <th class="px-3 py-2 text-left text-orange-400">Method</th>
+                  <th class="px-3 py-2 text-left text-orange-400">Route</th>
+                  <th class="px-3 py-2 text-left text-orange-400">Handler</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-800 text-xs">
+                <tr class="bg-gray-950"><td class="px-3 py-2"><span class="text-green-400">GET</span></td><td class="px-3 py-2 font-mono text-cyan-400">/</td><td class="px-3 py-2 text-gray-400">root()</td></tr>
+                <tr class="bg-gray-900"><td class="px-3 py-2"><span class="text-green-400">GET</span></td><td class="px-3 py-2 font-mono text-cyan-400">/health</td><td class="px-3 py-2 text-gray-400">health()</td></tr>
+                <tr class="bg-gray-950"><td class="px-3 py-2"><span class="text-green-400">GET</span></td><td class="px-3 py-2 font-mono text-cyan-400">/models</td><td class="px-3 py-2 text-gray-400">list_models()</td></tr>
+                <tr class="bg-gray-900"><td class="px-3 py-2"><span class="text-green-400">GET</span></td><td class="px-3 py-2 font-mono text-cyan-400">/ws/terminal</td><td class="px-3 py-2 text-gray-400">ws_handler()</td></tr>
+                <tr class="bg-gray-950"><td class="px-3 py-2"><span class="text-blue-400">POST</span></td><td class="px-3 py-2 font-mono text-cyan-400">/api/chat</td><td class="px-3 py-2 text-gray-400">chat()</td></tr>
+                <tr class="bg-gray-900"><td class="px-3 py-2"><span class="text-blue-400">POST</span></td><td class="px-3 py-2 font-mono text-cyan-400">/api/agent</td><td class="px-3 py-2 text-gray-400">run_agent()</td></tr>
+                <tr class="bg-gray-950"><td class="px-3 py-2"><span class="text-blue-400">POST</span></td><td class="px-3 py-2 font-mono text-cyan-400">/api/missions</td><td class="px-3 py-2 text-gray-400">create_mission()</td></tr>
+                <tr class="bg-gray-900"><td class="px-3 py-2"><span class="text-green-400">GET</span></td><td class="px-3 py-2 font-mono text-cyan-400">/api/files</td><td class="px-3 py-2 text-gray-400">list_files()</td></tr>
+                <tr class="bg-gray-950"><td class="px-3 py-2"><span class="text-green-400">GET</span></td><td class="px-3 py-2 font-mono text-cyan-400">/api/files/*</td><td class="px-3 py-2 text-gray-400">read_file()</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- What to Edit -->
+      <h3 class="text-xl font-semibold text-white mb-4">🔧 What to Edit</h3>
+      <div class="space-y-4">
+        
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-gray-800 px-4 py-2 flex items-center justify-between">
+            <span class="font-semibold text-white">Chat System Prompt</span>
+            <span class="text-xs text-orange-400 font-mono">crates/spawn-api/src/main.rs</span>
+          </div>
+          <div class="p-4">
+            <p class="text-sm text-gray-400 mb-2">Line ~213 - default system prompt for /api/chat:</p>
+            <pre class="bg-black/50 rounded-lg p-3 text-xs overflow-x-auto">
+<span class="text-purple-400">let</span> system = payload.system_prompt.unwrap_or_else(|| {
+    <span class="text-green-400">"You are Grok, a helpful and slightly witty AI assistant for spawn.new. \
+     Help users build software, write code, and debug issues. \
+     Be concise but thorough."</span>.to_string()
+});
+            </pre>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-gray-800 px-4 py-2 flex items-center justify-between">
+            <span class="font-semibold text-white">Agent System Prompt</span>
+            <span class="text-xs text-orange-400 font-mono">crates/spawn-api/src/main.rs</span>
+          </div>
+          <div class="p-4">
+            <p class="text-sm text-gray-400 mb-2">Line ~255 - prompt for /api/agent with tool definitions:</p>
+            <pre class="bg-black/50 rounded-lg p-3 text-xs overflow-x-auto">
+<span class="text-purple-400">let</span> system_prompt = <span class="text-green-400">r#"You are an autonomous AI agent...
+
+Available tools:
+- shell: Execute safe shell commands (ls, cat, grep, find...)
+  Usage: TOOL: shell
+         ARGS: {"command": "ls", "args": ["-la"]}
+..."#</span>;
+            </pre>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-gray-800 px-4 py-2 flex items-center justify-between">
+            <span class="font-semibold text-white">Available Models</span>
+            <span class="text-xs text-orange-400 font-mono">crates/spawn-api/src/main.rs</span>
+          </div>
+          <div class="p-4">
+            <p class="text-sm text-gray-400 mb-2">Line ~22 - model shortnames → OpenRouter IDs:</p>
+            <pre class="bg-black/50 rounded-lg p-3 text-xs overflow-x-auto">
+<span class="text-purple-400">const</span> MODELS: &[(&<span class="text-cyan-400">str</span>, &<span class="text-cyan-400">str</span>)] = &[
+    (<span class="text-green-400">"grok-3-mini"</span>, <span class="text-green-400">"x-ai/grok-3-mini-beta"</span>),
+    (<span class="text-green-400">"grok-3"</span>, <span class="text-green-400">"x-ai/grok-3-beta"</span>),
+    (<span class="text-green-400">"claude-sonnet"</span>, <span class="text-green-400">"anthropic/claude-sonnet-4-20250514"</span>),
+    (<span class="text-green-400">"gpt-4o"</span>, <span class="text-green-400">"openai/gpt-4o"</span>),
+    <span class="text-gray-500">// Add more here...</span>
+];
+            </pre>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-gray-800 px-4 py-2 flex items-center justify-between">
+            <span class="font-semibold text-white">Allowed Shell Commands</span>
+            <span class="text-xs text-orange-400 font-mono">crates/spawn-api/src/main.rs</span>
+          </div>
+          <div class="p-4">
+            <p class="text-sm text-gray-400 mb-2">Line ~320 - whitelist for execute_tool():</p>
+            <pre class="bg-black/50 rounded-lg p-3 text-xs overflow-x-auto">
+<span class="text-purple-400">let</span> allowed = [<span class="text-green-400">"ls"</span>, <span class="text-green-400">"cat"</span>, <span class="text-green-400">"head"</span>, <span class="text-green-400">"tail"</span>, <span class="text-green-400">"grep"</span>, <span class="text-green-400">"find"</span>, <span class="text-green-400">"wc"</span>, <span class="text-green-400">"echo"</span>, <span class="text-green-400">"pwd"</span>, <span class="text-green-400">"date"</span>];
+<span class="text-purple-400">if</span> !allowed.contains(&cmd) {
+    <span class="text-purple-400">return</span> format!(<span class="text-green-400">"Error: Command '{}' not allowed"</span>, cmd);
+}
+            </pre>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-gray-800 px-4 py-2 flex items-center justify-between">
+            <span class="font-semibold text-white">React Chat Component</span>
+            <span class="text-xs text-orange-400 font-mono">web/src/components/Chat.tsx</span>
+          </div>
+          <div class="p-4">
+            <p class="text-sm text-gray-400 mb-2">Calls the Rust backend API:</p>
+            <pre class="bg-black/50 rounded-lg p-3 text-xs overflow-x-auto">
+<span class="text-gray-500">// Chat.tsx - handleSend()</span>
+<span class="text-purple-400">const</span> response = <span class="text-purple-400">await</span> fetch(<span class="text-green-400">'http://192.168.43.131:3000/api/chat'</span>, {
+  method: <span class="text-green-400">'POST'</span>,
+  headers: { <span class="text-green-400">'Content-Type'</span>: <span class="text-green-400">'application/json'</span> },
+  body: JSON.stringify({
+    message: message.trim(),
+    model: selectedModel,         <span class="text-gray-500">// from dropdown</span>
+    system_prompt: customPrompt,  <span class="text-gray-500">// optional override</span>
+  }),
+});
+            </pre>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Quick Reference -->
+      <h3 class="text-xl font-semibold text-white mt-8 mb-4">📋 Quick Reference</h3>
+      <div class="overflow-hidden rounded-xl border border-gray-800">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-900">
+            <tr>
+              <th class="px-4 py-3 text-left text-orange-400">I want to...</th>
+              <th class="px-4 py-3 text-left text-orange-400">Edit this file</th>
+              <th class="px-4 py-3 text-left text-orange-400">Look for</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800">
+            <tr class="bg-gray-950"><td class="px-4 py-3">Change chat system prompt</td><td class="px-4 py-3 font-mono text-cyan-400">spawn-api/src/main.rs</td><td class="px-4 py-3 text-gray-400">chat() → system =</td></tr>
+            <tr class="bg-gray-900"><td class="px-4 py-3">Change agent prompt</td><td class="px-4 py-3 font-mono text-cyan-400">spawn-api/src/main.rs</td><td class="px-4 py-3 text-gray-400">run_agent() → system_prompt</td></tr>
+            <tr class="bg-gray-950"><td class="px-4 py-3">Add LLM model</td><td class="px-4 py-3 font-mono text-cyan-400">spawn-api/src/main.rs</td><td class="px-4 py-3 text-gray-400">MODELS array</td></tr>
+            <tr class="bg-gray-900"><td class="px-4 py-3">Allow more shell commands</td><td class="px-4 py-3 font-mono text-cyan-400">spawn-api/src/main.rs</td><td class="px-4 py-3 text-gray-400">execute_tool() → allowed</td></tr>
+            <tr class="bg-gray-950"><td class="px-4 py-3">Change default model</td><td class="px-4 py-3 font-mono text-cyan-400">spawn-api/src/main.rs</td><td class="px-4 py-3 text-gray-400">Orchestrator::new().with_model()</td></tr>
+            <tr class="bg-gray-900"><td class="px-4 py-3">Add API route</td><td class="px-4 py-3 font-mono text-cyan-400">spawn-api/src/main.rs</td><td class="px-4 py-3 text-gray-400">Router::new().route()</td></tr>
+            <tr class="bg-gray-950"><td class="px-4 py-3">Change OpenRouter client</td><td class="px-4 py-3 font-mono text-cyan-400">spawn-ai/src/openrouter.rs</td><td class="px-4 py-3 text-gray-400">OpenRouterClient</td></tr>
+            <tr class="bg-gray-900"><td class="px-4 py-3">Update Chat UI</td><td class="px-4 py-3 font-mono text-cyan-400">web/src/components/Chat.tsx</td><td class="px-4 py-3 text-gray-400">React component</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Build Commands -->
+      <h3 class="text-xl font-semibold text-white mt-8 mb-4">🔨 Build & Run</h3>
+      <div class="grid grid-cols-2 gap-4">
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <h4 class="text-orange-400 font-semibold mb-2">Rust Backend</h4>
+          <pre class="text-xs text-cyan-400">
+cd /Volumes/Iron/spawn
+
+<span class="text-gray-500"># Build</span>
+cargo build --release -p spawn-api
+
+<span class="text-gray-500"># Run</span>
+cargo run -p spawn-api
+
+<span class="text-gray-500"># Or run the binary</span>
+./target/release/spawn-api
+          </pre>
+        </div>
+        <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <h4 class="text-orange-400 font-semibold mb-2">React Frontend</h4>
+          <pre class="text-xs text-cyan-400">
+cd /Volumes/Iron/spawn/web
+
+<span class="text-gray-500"># Install deps</span>
+pnpm install
+
+<span class="text-gray-500"># Dev server</span>
+pnpm dev
+
+<span class="text-gray-500"># Build for prod</span>
+pnpm build
+          </pre>
+        </div>
+      </div>
+
+      <!-- Two Backends Note -->
+      <div class="mt-8 p-4 bg-purple-900/20 border border-purple-800 rounded-xl">
+        <h4 class="text-purple-400 font-semibold mb-2">💡 Two Backends?</h4>
+        <p class="text-sm text-gray-300">
+          <strong class="text-white">Rust (spawn-api :3000)</strong> - Main backend with WebSocket terminal, orchestrator, database. Connects to React frontend.<br><br>
+          <strong class="text-white">Node (sandbox-server :3080)</strong> - Standalone sandbox with Grok tool-calling loop. Self-contained chat UI.
+        </p>
+        <p class="text-sm text-gray-400 mt-2">They can run independently or be integrated together!</p>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // Tab switching
+    function showTab(tabName) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById('tab-' + tabName).classList.add('active');
+      event.target.classList.add('active');
+      
+      // Re-render mermaid diagrams when tab becomes visible
+      setTimeout(() => mermaid.run(), 100);
+    }
+
+    // Initialize mermaid
+    mermaid.initialize({ 
+      startOnLoad: true, 
+      theme: 'dark',
+      themeVariables: {
+        primaryColor: '#7c3aed',
+        primaryTextColor: '#fff',
+        primaryBorderColor: '#7c3aed',
+        lineColor: '#6b7280',
+        secondaryColor: '#1f2937',
+        tertiaryColor: '#111827'
+      }
+    });
+  </script>
+</body>
+</html>

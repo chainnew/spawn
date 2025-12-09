@@ -33,3 +33,6 @@ tracing-subscriber = { workspace = true }
 # Config
 dotenvy = { workspace = true }
 anyhow = { workspace = true }
+
+# HTTP client for sandbox health checks & SSE streaming
+reqwest = { version = "0.12", features = ["json", "stream"] }

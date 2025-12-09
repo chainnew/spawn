@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Spawn Sandbox - Grok + Tools</title>
+  <title>ARCHITECT — AI Development Agent</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -20,16 +20,35 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.umd.min.js"></script>
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; background: #0a0a0a; color: #e5e5e5; font-family: system-ui, -apple-system, sans-serif; }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #141414; }
+    ::-webkit-scrollbar-track { background: #0a0a0a; }
     ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #444; }
-    .typing-cursor::after { content: '▋'; animation: blink 1s infinite; }
-    @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
     pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+
+    /* Spinner animations */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+    .animate-spin { animation: spin 1s linear infinite; }
+    .animate-pulse { animation: pulse 2s ease-in-out infinite; }
+
+    /* Ellipsis spinner dots */
+    .dot-1 { animation: bounce 0.6s ease-in-out infinite; animation-delay: 0s; }
+    .dot-2 { animation: bounce 0.6s ease-in-out infinite; animation-delay: 0.1s; }
+    .dot-3 { animation: bounce 0.6s ease-in-out infinite; animation-delay: 0.2s; }
+
+    /* Text auto-resize */
+    .auto-resize-textarea {
+      resize: none;
+      overflow: hidden;
+      min-height: 56px;
+      max-height: 200px;
+    }
   </style>
 </head>
 <body>
@@ -38,8 +57,90 @@
   <script type="text/babel">
     const { useState, useEffect, useRef, useCallback } = React;
 
+    // ==================== Spinner Components ====================
+    const SpinnerCircle = ({ size = 20, className = '' }) => (
+      <svg className={`animate-spin ${className}`} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <circle cx="12" cy="12" r="10" strokeWidth="3" strokeOpacity="0.2" />
+        <path d="M12 2a10 10 0 0 1 10 10" strokeWidth="3" strokeLinecap="round" />
+      </svg>
+    );
+
+    const SpinnerEllipsis = ({ size = 24, className = '' }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" className={className}>
+        <circle className="dot-1" cx="4" cy="12" r="2.5" fill="currentColor" />
+        <circle className="dot-2" cx="12" cy="12" r="2.5" fill="currentColor" />
+        <circle className="dot-3" cx="20" cy="12" r="2.5" fill="currentColor" />
+      </svg>
+    );
+
+    const SpinnerRing = ({ size = 24, className = '' }) => (
+      <svg width={size} height={size} viewBox="0 0 44 44" stroke="currentColor" className={className}>
+        <g fill="none" fillRule="evenodd" strokeWidth="2">
+          <circle cx="22" cy="22" r="1">
+            <animate attributeName="r" begin="0s" dur="1.8s" values="1; 20" calcMode="spline" keyTimes="0; 1" keySplines="0.165, 0.84, 0.44, 1" repeatCount="indefinite" />
+            <animate attributeName="stroke-opacity" begin="0s" dur="1.8s" values="1; 0" calcMode="spline" keyTimes="0; 1" keySplines="0.3, 0.61, 0.355, 1" repeatCount="indefinite" />
+          </circle>
+          <circle cx="22" cy="22" r="1">
+            <animate attributeName="r" begin="-0.9s" dur="1.8s" values="1; 20" calcMode="spline" keyTimes="0; 1" keySplines="0.165, 0.84, 0.44, 1" repeatCount="indefinite" />
+            <animate attributeName="stroke-opacity" begin="-0.9s" dur="1.8s" values="1; 0" calcMode="spline" keyTimes="0; 1" keySplines="0.3, 0.61, 0.355, 1" repeatCount="indefinite" />
+          </circle>
+        </g>
+      </svg>
+    );
+
+    const SpinnerInfinite = ({ size = 24, className = '' }) => (
+      <svg width={size} height={size} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid" className={className}>
+        <path
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="8"
+          strokeDasharray="205 51"
+          d="M24.3 30C11.4 30 5 43.3 5 50s6.4 20 19.3 20c19.3 0 32.1-40 51.4-40 C88.6 30 95 43.3 95 50s-6.4 20-19.3 20C56.4 70 43.6 30 24.3 30z"
+          strokeLinecap="round"
+          style={{ transform: 'scale(0.8)', transformOrigin: '50px 50px' }}
+        >
+          <animate attributeName="stroke-dashoffset" repeatCount="indefinite" dur="2s" keyTimes="0;1" values="0;256.58892822265625" />
+        </path>
+      </svg>
+    );
+
     // ==================== Artifact Renderer ====================
     const escapeHTML = (str = '') => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    // Language icons and colors for code display
+    const langMeta = {
+      python: { icon: '🐍', color: '#3776ab', name: 'Python' },
+      javascript: { icon: '🟨', color: '#f7df1e', name: 'JavaScript' },
+      typescript: { icon: '🔷', color: '#3178c6', name: 'TypeScript' },
+      rust: { icon: '🦀', color: '#dea584', name: 'Rust' },
+      go: { icon: '🔵', color: '#00add8', name: 'Go' },
+      java: { icon: '☕', color: '#ed8b00', name: 'Java' },
+      cpp: { icon: '⚡', color: '#00599c', name: 'C++' },
+      c: { icon: '🔧', color: '#555555', name: 'C' },
+      html: { icon: '🌐', color: '#e34f26', name: 'HTML' },
+      css: { icon: '🎨', color: '#1572b6', name: 'CSS' },
+      sql: { icon: '🗄️', color: '#336791', name: 'SQL' },
+      bash: { icon: '💻', color: '#4eaa25', name: 'Bash' },
+      shell: { icon: '💻', color: '#4eaa25', name: 'Shell' },
+      json: { icon: '📋', color: '#292929', name: 'JSON' },
+      yaml: { icon: '📝', color: '#cb171e', name: 'YAML' },
+      toml: { icon: '⚙️', color: '#9c4121', name: 'TOML' },
+      markdown: { icon: '📄', color: '#083fa1', name: 'Markdown' },
+      jsx: { icon: '⚛️', color: '#61dafb', name: 'React JSX' },
+      tsx: { icon: '⚛️', color: '#3178c6', name: 'React TSX' },
+      vue: { icon: '💚', color: '#42b883', name: 'Vue' },
+      svelte: { icon: '🔶', color: '#ff3e00', name: 'Svelte' },
+      image: { icon: '🖼️', color: '#10b981', name: 'Image' },
+      chart: { icon: '📊', color: '#8b5cf6', name: 'Chart' },
+      react: { icon: '⚛️', color: '#61dafb', name: 'React' },
+      mermaid: { icon: '🧜', color: '#ff6b9d', name: 'Mermaid' },
+      canvas: { icon: '🎨', color: '#f59e0b', name: 'Canvas' },
+      p5: { icon: '🎭', color: '#ed225d', name: 'P5.js' },
+      threejs: { icon: '🧊', color: '#049ef4', name: 'Three.js' },
+      csv: { icon: '📋', color: '#22c55e', name: 'CSV' },
+      text: { icon: '📝', color: '#6b7280', name: 'Text' },
+      docx: { icon: '📄', color: '#2b579a', name: 'Word Doc' },
+    };
 
     const generators = {
       react: (code) => `<!DOCTYPE html><html><head>
@@ -99,14 +200,283 @@ new ResizeObserver(() => parent.postMessage({ type: 'resize', height: document.b
       code: (code, lang) => `<!DOCTYPE html><html><head>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1/themes/prism-tomorrow.min.css">
 <script src="https://cdn.jsdelivr.net/npm/prismjs@1/prism.min.js"><\/script>
-<style>body { margin: 0; background: #1e1e1e; } pre { margin: 0; padding: 16px; } code { font-family: 'JetBrains Mono', monospace; font-size: 13px; }</style>
-</head><body><pre><code class="language-${lang || 'javascript'}">${escapeHTML(code)}</code></pre>
-<script>Prism.highlightAll(); parent.postMessage({ type: 'ready' }, '*');<\/script></body></html>`,
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-python.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-rust.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-go.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-typescript.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-jsx.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-tsx.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-sql.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-yaml.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-toml.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1/plugins/line-numbers/prism-line-numbers.min.js"><\/script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1/plugins/line-numbers/prism-line-numbers.min.css">
+<style>
+body { margin: 0; background: #1e1e1e; }
+pre { margin: 0; padding: 16px; border-radius: 0; }
+pre.line-numbers { padding-left: 3.8em; }
+code { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; line-height: 1.5; }
+.line-numbers .line-numbers-rows { border-right: 1px solid #444; }
+</style>
+</head><body><pre class="line-numbers"><code class="language-${lang || 'javascript'}">${escapeHTML(code)}</code></pre>
+<script>Prism.highlightAll(); parent.postMessage({ type: 'ready' }, '*'); parent.postMessage({ type: 'resize', height: document.body.scrollHeight }, '*');<\/script></body></html>`,
+
+      // Canvas/game renderer - for interactive visual outputs
+      canvas: (code) => `<!DOCTYPE html><html><head>
+<style>
+body { margin: 0; background: #0f0f0f; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+canvas { border: 1px solid #333; background: #000; }
+</style>
+</head><body>
+<canvas id="canvas" width="800" height="600"></canvas>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+try {
+  ${code}
+  parent.postMessage({ type: 'ready' }, '*');
+} catch(e) {
+  ctx.fillStyle = '#ff6b6b';
+  ctx.font = '14px monospace';
+  ctx.fillText('Error: ' + e.message, 20, 30);
+}
+parent.postMessage({ type: 'resize', height: canvas.height + 32 }, '*');
+<\/script></body></html>`,
+
+      // P5.js creative coding
+      p5: (code) => `<!DOCTYPE html><html><head>
+<script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"><\/script>
+<style>body { margin: 0; display: flex; justify-content: center; padding: 16px; background: #0f0f0f; }</style>
+</head><body>
+<script>
+${code}
+parent.postMessage({ type: 'ready' }, '*');
+setTimeout(() => parent.postMessage({ type: 'resize', height: document.body.scrollHeight }, '*'), 100);
+<\/script></body></html>`,
+
+      // Three.js 3D
+      threejs: (code) => `<!DOCTYPE html><html><head>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"><\/script>
+<style>body { margin: 0; background: #0f0f0f; } canvas { display: block; }</style>
+</head><body>
+<script>
+${code}
+parent.postMessage({ type: 'ready' }, '*');
+parent.postMessage({ type: 'resize', height: 500 }, '*');
+<\/script></body></html>`,
+
+      // CSV/Spreadsheet preview
+      csv: (code) => `<!DOCTYPE html><html><head>
+<style>
+body { margin: 0; padding: 16px; background: #0f0f0f; color: white; font-family: system-ui; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { border: 1px solid #333; padding: 8px 12px; text-align: left; }
+th { background: #1a1a2e; color: #a855f7; font-weight: 600; }
+tr:nth-child(even) { background: #151515; }
+tr:hover { background: #1f1f1f; }
+</style>
+</head><body><div id="table"></div>
+<script>
+const csv = \`${code.replace(/`/g, '\\`')}\`;
+const rows = csv.trim().split('\\n').map(r => r.split(','));
+const table = document.createElement('table');
+rows.forEach((row, i) => {
+  const tr = document.createElement('tr');
+  row.forEach(cell => {
+    const el = document.createElement(i === 0 ? 'th' : 'td');
+    el.textContent = cell.trim();
+    tr.appendChild(el);
+  });
+  table.appendChild(tr);
+});
+document.getElementById('table').appendChild(table);
+parent.postMessage({ type: 'ready' }, '*');
+parent.postMessage({ type: 'resize', height: document.body.scrollHeight }, '*');
+<\/script></body></html>`,
+
+      // JSON viewer
+      json: (code) => `<!DOCTYPE html><html><head>
+<style>
+body { margin: 0; padding: 16px; background: #1e1e1e; color: #d4d4d4; font-family: monospace; font-size: 13px; }
+.key { color: #9cdcfe; }
+.string { color: #ce9178; }
+.number { color: #b5cea8; }
+.boolean { color: #569cd6; }
+.null { color: #569cd6; }
+pre { margin: 0; white-space: pre-wrap; }
+</style>
+</head><body><pre id="json"></pre>
+<script>
+function syntaxHighlight(json) {
+  return json.replace(/("(\\\\u[a-zA-Z0-9]{4}|\\\\[^u]|[^\\\\"])*"(\\s*:)?|\\b(true|false|null)\\b|-?\\d+(?:\\.\\d*)?(?:[eE][+\\-]?\\d+)?)/g, function (match) {
+    let cls = 'number';
+    if (/^"/.test(match)) { cls = /:$/.test(match) ? 'key' : 'string'; }
+    else if (/true|false/.test(match)) { cls = 'boolean'; }
+    else if (/null/.test(match)) { cls = 'null'; }
+    return '<span class="' + cls + '">' + match + '</span>';
+  });
+}
+try {
+  const obj = JSON.parse(\`${code.replace(/`/g, '\\`').replace(/\\/g, '\\\\')}\`);
+  document.getElementById('json').innerHTML = syntaxHighlight(JSON.stringify(obj, null, 2));
+} catch(e) {
+  document.getElementById('json').textContent = 'Invalid JSON: ' + e.message;
+}
+parent.postMessage({ type: 'ready' }, '*');
+parent.postMessage({ type: 'resize', height: document.body.scrollHeight }, '*');
+<\/script></body></html>`,
+
+      // Plain text / document
+      text: (code) => `<!DOCTYPE html><html><head>
+<style>
+body { margin: 0; padding: 20px; background: #fafafa; color: #333; font-family: 'Georgia', serif; font-size: 14px; line-height: 1.6; max-width: 800px; }
+h1, h2, h3 { font-family: system-ui; color: #111; }
+p { margin: 1em 0; }
+</style>
+</head><body>${code.replace(/\n/g, '<br>')}<script>parent.postMessage({ type: 'ready' }, '*'); parent.postMessage({ type: 'resize', height: document.body.scrollHeight }, '*');<\/script></body></html>`,
+
+      // Image display (base64 or URL)
+      image: (code) => `<!DOCTYPE html><html><head>
+<style>
+body { margin: 0; padding: 16px; background: #0f0f0f; display: flex; justify-content: center; align-items: center; min-height: 200px; }
+img { max-width: 100%; max-height: 80vh; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+.error { color: #ff6b6b; font-family: system-ui; }
+</style>
+</head><body>
+<img src="${code}" onerror="this.outerHTML='<div class=error>Failed to load image</div>'" />
+<script>parent.postMessage({ type: 'ready' }, '*'); setTimeout(() => parent.postMessage({ type: 'resize', height: document.body.scrollHeight }, '*'), 100);<\/script>
+</body></html>`,
+
+      // Chart (using Chart.js)
+      chart: (code) => `<!DOCTYPE html><html><head>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"><\/script>
+<style>body { margin: 0; padding: 16px; background: #0f0f0f; } canvas { max-width: 100%; }</style>
+</head><body>
+<canvas id="chart"></canvas>
+<script>
+try {
+  const config = ${code};
+  // Apply dark theme defaults
+  Chart.defaults.color = '#9ca3af';
+  Chart.defaults.borderColor = '#374151';
+  new Chart(document.getElementById('chart'), config);
+  parent.postMessage({ type: 'ready' }, '*');
+  parent.postMessage({ type: 'resize', height: 400 }, '*');
+} catch(e) {
+  document.body.innerHTML = '<div style="color:#ff6b6b;font-family:monospace;padding:20px">Chart Error: ' + e.message + '</div>';
+}
+<\/script></body></html>`,
+
+      // Word document preview (shows as formatted text, download generates .docx)
+      docx: (code) => `<!DOCTYPE html><html><head>
+<style>
+body { margin: 0; padding: 20px; background: #fff; color: #333; font-family: 'Calibri', 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.6; }
+h1 { font-size: 24px; color: #2b579a; border-bottom: 2px solid #2b579a; padding-bottom: 8px; }
+h2 { font-size: 18px; color: #2b579a; }
+p { margin: 1em 0; }
+.doc-header { background: #2b579a; color: white; padding: 8px 16px; margin: -20px -20px 20px -20px; font-size: 12px; display: flex; align-items: center; gap: 8px; }
+.doc-icon { width: 20px; height: 20px; }
+</style>
+</head><body>
+<div class="doc-header">
+  <svg class="doc-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2zm7 1.5V9h5.5L13 3.5zM8 11v2h8v-2H8zm0 4v2h8v-2H8z"/></svg>
+  Word Document Preview
+</div>
+${code.replace(/\n/g, '<br>')}
+<script>parent.postMessage({ type: 'ready' }, '*'); parent.postMessage({ type: 'resize', height: document.body.scrollHeight }, '*');<\/script>
+</body></html>`,
     };
 
-    function ArtifactPreview({ artifact }) {
+    // File extension mapping for downloads
+    const fileExtensions = {
+      react: 'jsx',
+      html: 'html',
+      mermaid: 'mmd',
+      markdown: 'md',
+      svg: 'svg',
+      code: 'txt',
+      csv: 'csv',
+      json: 'json',
+      text: 'txt',
+      docx: 'docx',
+      canvas: 'js',
+      p5: 'js',
+      threejs: 'js',
+      python: 'py',
+      javascript: 'js',
+      typescript: 'ts',
+      rust: 'rs',
+      go: 'go',
+      image: 'png',
+      chart: 'json',
+    };
+
+    // MIME types for downloads
+    const mimeTypes = {
+      react: 'text/javascript',
+      html: 'text/html',
+      mermaid: 'text/plain',
+      markdown: 'text/markdown',
+      svg: 'image/svg+xml',
+      code: 'text/plain',
+      csv: 'text/csv',
+      json: 'application/json',
+      text: 'text/plain',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      canvas: 'text/javascript',
+      p5: 'text/javascript',
+      threejs: 'text/javascript',
+      python: 'text/x-python',
+      javascript: 'text/javascript',
+      typescript: 'text/typescript',
+      rust: 'text/x-rust',
+      go: 'text/x-go',
+      image: 'image/png',
+      chart: 'application/json',
+    };
+
+    function ArtifactPreview({ artifact, onUpdate }) {
       const iframeRef = useRef(null);
       const [height, setHeight] = useState(300);
+      const [copied, setCopied] = useState(false);
+      const [editing, setEditing] = useState(false);
+      const [activeFileIdx, setActiveFileIdx] = useState(0);
+      const [showCode, setShowCode] = useState(false);
+      const [showMeta, setShowMeta] = useState(false);
+
+      // Get base type (strip subtypes like 'code:module' → 'code')
+      const baseType = artifact.type?.split(':')[0] || 'code';
+      const subType = artifact.type?.includes(':') ? artifact.type.split(':')[1] : null;
+
+      // Normalize artifact to new format - support both old and new schemas
+      const files = artifact.files?.length ? artifact.files : (artifact.content ? [{
+        path: artifact.title?.replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.' + (artifact.lang || 'txt'),
+        language: artifact.lang || baseType || 'text',
+        content: artifact.content,
+        role: 'source',
+        entrypoint: true
+      }] : []);
+
+      const activeFile = files[activeFileIdx] || files[0] || { path: 'file.txt', language: 'text', content: '' };
+      const [editContent, setEditContent] = useState(activeFile.content);
+
+      // Get execution config (from new format or legacy)
+      const execution = artifact.execution || (artifact.runtime || artifact.run ? {
+        runtime: artifact.runtime,
+        command: artifact.run
+      } : null);
+
+      // Get dependencies (from new format)
+      const deps = artifact.dependencies?.packages || artifact.dependencies;
+
+      // Editable types - can be live-previewed (use base type for matching)
+      const editableTypes = ['react', 'html', 'mermaid', 'svg', 'canvas', 'p5', 'threejs', 'markdown', 'json', 'csv', 'chart', 'd3', 'webgl', 'diagram'];
+      const isEditable = editableTypes.includes(baseType);
+
+      // Code-only types - show syntax highlighted code
+      const codeOnlyTypes = ['code', 'python', 'javascript', 'typescript', 'rust', 'go', 'bash', 'sql', 'graphql', 'yaml', 'docker', 'terraform', 'config', 'api'];
+      const isCodeOnly = codeOnlyTypes.includes(baseType);
 
       useEffect(() => {
         const handler = (e) => {
@@ -118,20 +488,298 @@ new ResizeObserver(() => parent.postMessage({ type: 'resize', height: document.b
       }, []);
 
       useEffect(() => {
-        if (!iframeRef.current || !artifact) return;
-        const gen = generators[artifact.type] || generators.html;
-        iframeRef.current.srcdoc = gen(artifact.content, artifact.lang);
-      }, [artifact]);
+        if (!iframeRef.current || !activeFile) return;
+        const content = editing ? editContent : activeFile.content;
+        // Use baseType for generator lookup (e.g., 'react:app' → 'react')
+        const gen = generators[baseType] || generators.code;
+        iframeRef.current.srcdoc = gen(content, activeFile.language);
+      }, [artifact, activeFile, editContent, editing, baseType]);
+
+      // Reset edit content when file changes
+      useEffect(() => {
+        setEditContent(activeFile.content);
+      }, [activeFile.content, activeFileIdx]);
+
+      const handleCopy = async () => {
+        try {
+          await navigator.clipboard.writeText(activeFile.content);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+          console.error('Failed to copy:', err);
+        }
+      };
+
+      const handleDownload = async () => {
+        // Use the active file's path if available, otherwise construct from title
+        const filename = activeFile.path || `${artifact.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${fileExtensions[artifact.type] || 'txt'}`;
+
+        // Special handling for Word documents - generate real .docx
+        if (artifact.type === 'docx' && typeof docx !== 'undefined') {
+          try {
+            const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
+
+            // Parse content into paragraphs
+            const lines = activeFile.content.split('\n');
+            const children = lines.map(line => {
+              // Detect headers
+              if (line.startsWith('# ')) {
+                return new Paragraph({
+                  text: line.slice(2),
+                  heading: HeadingLevel.HEADING_1,
+                });
+              } else if (line.startsWith('## ')) {
+                return new Paragraph({
+                  text: line.slice(3),
+                  heading: HeadingLevel.HEADING_2,
+                });
+              } else if (line.startsWith('### ')) {
+                return new Paragraph({
+                  text: line.slice(4),
+                  heading: HeadingLevel.HEADING_3,
+                });
+              }
+              return new Paragraph({
+                children: [new TextRun(line)],
+              });
+            });
+
+            const doc = new Document({
+              sections: [{
+                properties: {},
+                children: children,
+              }],
+            });
+
+            const blob = await Packer.toBlob(doc);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            return;
+          } catch (err) {
+            console.error('Failed to generate docx:', err);
+          }
+        }
+
+        // Default: plain blob download
+        const mime = mimeTypes[activeFile.language] || mimeTypes[artifact.type] || 'text/plain';
+        const blob = new Blob([activeFile.content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+
+      const langInfo = langMeta[activeFile.language] || langMeta[artifact.lang] || langMeta[baseType] || { icon: '📄', color: '#6b7280', name: artifact.type };
+      const hasMultipleFiles = files.length > 1;
+      const hasMeta = artifact.description || artifact.tags?.length || execution || deps || artifact.version;
 
       return (
         <div className="border border-spawn-border rounded-lg overflow-hidden bg-[#0f0f0f]">
-          <div className="h-8 bg-spawn-surface flex items-center justify-between px-3 border-b border-spawn-border">
-            <div className="flex items-center gap-2">
-              <span className="text-xs px-1.5 py-0.5 bg-purple-600/20 text-purple-400 rounded uppercase">{artifact.type}</span>
-              <span className="text-sm text-white">{artifact.title}</span>
+          {/* Header */}
+          <div className="bg-spawn-surface border-b border-spawn-border">
+            <div className="h-10 flex items-center justify-between px-3">
+              <div className="flex items-center gap-2 overflow-hidden">
+                <span className="text-sm flex-shrink-0" title={langInfo.name}>{langInfo.icon}</span>
+                <span className="text-xs px-1.5 py-0.5 rounded uppercase font-medium flex-shrink-0" style={{ background: `${langInfo.color}20`, color: langInfo.color }}>
+                  {baseType}
+                </span>
+                {subType && (
+                  <span className="text-xs px-1.5 py-0.5 bg-gray-700/50 text-gray-400 rounded flex-shrink-0">
+                    {subType}
+                  </span>
+                )}
+                <span className="text-sm text-white font-medium truncate">{artifact.title}</span>
+                {execution?.runtime && (
+                  <span className="text-xs px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded flex-shrink-0">
+                    {execution.runtime}
+                  </span>
+                )}
+                {artifact.version?.number && (
+                  <span className="text-xs px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded flex-shrink-0">
+                    v{artifact.version.number}
+                  </span>
+                )}
+                {editing && <span className="text-xs px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded flex-shrink-0">Editing</span>}
+              </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {/* Info/metadata button */}
+              {hasMeta && (
+                <button
+                  onClick={() => setShowMeta(!showMeta)}
+                  className={`p-1.5 rounded transition-colors ${showMeta ? 'bg-cyan-600/20 text-cyan-400' : 'hover:bg-spawn-border text-spawn-muted hover:text-white'}`}
+                  title="Show artifact info"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </button>
+              )}
+              {/* Toggle code/preview for editable types */}
+              {isEditable && !isCodeOnly && (
+                <button
+                  onClick={() => setShowCode(!showCode)}
+                  className={`p-1.5 rounded transition-colors ${showCode ? 'bg-purple-600/20 text-purple-400' : 'hover:bg-spawn-border text-spawn-muted hover:text-white'}`}
+                  title={showCode ? "Show preview" : "Show code"}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                  </svg>
+                </button>
+              )}
+              {/* Edit button */}
+              {isEditable && (
+                <button
+                  onClick={() => setEditing(!editing)}
+                  className={`p-1.5 rounded transition-colors ${editing ? 'bg-purple-600/20 text-purple-400' : 'hover:bg-spawn-border text-spawn-muted hover:text-white'}`}
+                  title={editing ? "Exit edit mode" : "Edit code"}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+              )}
+              <button
+                onClick={handleCopy}
+                className="p-1.5 hover:bg-spawn-border rounded transition-colors text-spawn-muted hover:text-white"
+                title="Copy to clipboard"
+              >
+                {copied ? (
+                  <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                )}
+              </button>
+              <button
+                onClick={handleDownload}
+                className="p-1.5 hover:bg-spawn-border rounded transition-colors text-spawn-muted hover:text-white"
+                title="Download file"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              </button>
             </div>
+            </div>
+
+            {/* Metadata panel */}
+            {showMeta && (
+              <div className="px-3 py-2 text-xs border-t border-spawn-border/50 bg-spawn-bg/30 space-y-2">
+                {artifact.description && (
+                  <p className="text-spawn-muted">{artifact.description}</p>
+                )}
+                {artifact.tags?.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {artifact.tags.map((tag, i) => (
+                      <span key={i} className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">#{tag}</span>
+                    ))}
+                  </div>
+                )}
+                {execution?.command && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-spawn-muted">Run:</span>
+                    <code className="text-green-400 font-mono bg-black/30 px-1.5 py-0.5 rounded">{execution.command}</code>
+                  </div>
+                )}
+                {deps && Object.keys(deps).length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-spawn-muted">Deps:</span>
+                    {Object.entries(deps).slice(0, 5).map(([name, ver]) => (
+                      <span key={name} className="text-cyan-400 font-mono bg-black/30 px-1.5 py-0.5 rounded text-xs">{name}@{ver}</span>
+                    ))}
+                    {Object.keys(deps).length > 5 && <span className="text-spawn-muted">+{Object.keys(deps).length - 5} more</span>}
+                  </div>
+                )}
+                {artifact.id && (
+                  <div className="flex items-center gap-2 text-spawn-muted/50">
+                    <span>ID: {artifact.id}</span>
+                    {artifact.checksum && <span>• {artifact.checksum.slice(0, 20)}...</span>}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* File tabs - shown when multiple files */}
+            {hasMultipleFiles && (
+              <div className="flex items-center gap-0.5 px-2 pb-1 overflow-x-auto">
+                {files.map((file, idx) => {
+                  const fileLang = langMeta[file.language] || { icon: '📄', color: '#6b7280' };
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => setActiveFileIdx(idx)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-t transition-colors whitespace-nowrap ${
+                        idx === activeFileIdx
+                          ? 'bg-[#0f0f0f] text-white border-t border-l border-r border-spawn-border'
+                          : 'text-spawn-muted hover:text-white hover:bg-spawn-border/50'
+                      }`}
+                    >
+                      <span>{fileLang.icon}</span>
+                      <span className="font-mono">{file.path.split('/').pop()}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Run command info */}
+            {artifact.run && (
+              <div className="flex items-center gap-2 px-3 py-1.5 text-xs border-t border-spawn-border/50 bg-spawn-bg/30">
+                <span className="text-spawn-muted">Run:</span>
+                <code className="text-green-400 font-mono">{artifact.run}</code>
+              </div>
+            )}
           </div>
-          <iframe ref={iframeRef} className="w-full border-0" style={{ height }} sandbox="allow-scripts allow-same-origin" />
+
+          {/* Content area - either editor or preview */}
+          {editing ? (
+            <div className="flex" style={{ height: Math.max(300, height) }}>
+              {/* Code editor */}
+              <div className="flex-1 overflow-hidden">
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="w-full h-full bg-[#1e1e1e] text-gray-200 font-mono text-sm p-4 resize-none outline-none border-r border-spawn-border"
+                  style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}
+                  spellCheck={false}
+                />
+              </div>
+              {/* Live preview */}
+              {isEditable && !isCodeOnly && (
+                <div className="flex-1 overflow-hidden">
+                  <iframe ref={iframeRef} className="w-full h-full border-0" sandbox="allow-scripts" referrerPolicy="no-referrer" />
+                </div>
+              )}
+            </div>
+          ) : showCode ? (
+            <div className="overflow-auto" style={{ maxHeight: 500 }}>
+              <pre className="text-sm p-4 bg-[#1e1e1e] text-gray-300 font-mono overflow-auto">
+                <code>{activeFile.content}</code>
+              </pre>
+            </div>
+          ) : (
+            <iframe
+              ref={iframeRef}
+              className="w-full border-0"
+              style={{ height }}
+              sandbox="allow-scripts"
+              referrerPolicy="no-referrer"
+              loading="lazy"
+            />
+          )}
         </div>
       );
     }
@@ -175,13 +823,13 @@ new ResizeObserver(() => parent.postMessage({ type: 'resize', height: document.b
       if (isSystem) return null;
 
       return (
-        <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-            isUser ? 'bg-blue-600' : 'bg-purple-600'
+        <div className="flex gap-3">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold ${
+            isUser ? 'bg-blue-600' : 'bg-gradient-to-br from-purple-600 to-pink-600'
           }`}>
-            {isUser ? '👤' : '🤖'}
+            {isUser ? '👤' : 'A'}
           </div>
-          <div className={`flex-1 max-w-[80%] ${isUser ? 'text-right' : ''}`}>
+          <div className="flex-1 max-w-[80%]">
             <div className={`inline-block rounded-2xl px-4 py-2 ${
               isUser ? 'bg-blue-600 text-white' : 'bg-spawn-surface text-spawn-text'
             }`}>
@@ -287,14 +935,26 @@ new ResizeObserver(() => parent.postMessage({ type: 'resize', height: document.b
                     break;
                   case 'tool_start':
                     setThinking(`Running ${data.tool}...`);
+                    // Store args from tool_start for pairing with result
+                    assistantMessage._pendingTool = { tool: data.tool, args: data.args };
                     break;
                   case 'tool_result':
                     assistantMessage.toolCalls.push({
                       tool: data.tool,
-                      args: data.args,
+                      args: assistantMessage._pendingTool?.args || {},
                       result: data.result,
                     });
-                    setMessages(prev => [...prev.slice(0, -1), { ...assistantMessage }]);
+                    // Update message in place
+                    setMessages(prev => {
+                      const updated = [...prev];
+                      const lastIdx = updated.length - 1;
+                      if (updated[lastIdx]?.role === 'assistant') {
+                        updated[lastIdx] = { ...assistantMessage };
+                      } else {
+                        updated.push({ ...assistantMessage });
+                      }
+                      return updated;
+                    });
                     break;
                   case 'artifact':
                     assistantMessage.artifacts.push(data.artifact);
@@ -365,47 +1025,55 @@ new ResizeObserver(() => parent.postMessage({ type: 'resize', height: document.b
       };
 
       return (
-        <div className="h-screen flex flex-col bg-spawn-bg">
-          {/* Header */}
-          <header className="h-12 border-b border-spawn-border flex items-center justify-between px-4 bg-spawn-surface flex-shrink-0">
+        <div className="h-screen flex justify-center bg-spawn-bg">
+          <div className="w-full max-w-4xl flex flex-col border-x border-spawn-border">
+          {/* Header - minimal, same bg */}
+          <header className="h-14 border-b border-spawn-border/50 flex items-center justify-between px-4 bg-spawn-bg flex-shrink-0">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-lg">
-                🧠
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center font-bold text-white">
+                A
               </div>
               <div>
-                <span className="font-semibold text-white">Spawn Sandbox</span>
-                <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-green-600/20 text-green-400">Grok + Tools</span>
+                <span className="font-semibold text-white">ARCHITECT</span>
+                <span className="text-xs text-spawn-muted ml-2">Grok 4.1</span>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className={`w-2 h-2 rounded-full ${serverStatus?.running ? 'bg-green-500' : 'bg-red-500'}`} />
-              <span className="text-xs text-spawn-muted">{serverStatus?.container || 'Checking...'}</span>
+              {serverStatus?.workspace && (
+                <span className="text-xs text-spawn-muted px-2 py-1 bg-spawn-surface rounded">
+                  {serverStatus.workspace.split('/').pop()}
+                </span>
+              )}
+              <div className="flex items-center gap-1.5">
+                <div className={`w-1.5 h-1.5 rounded-full ${serverStatus?.status === 'healthy' ? 'bg-green-500' : 'bg-red-500'}`} />
+                <span className="text-xs text-spawn-muted">{serverStatus?.status === 'healthy' ? 'Online' : 'Offline'}</span>
+              </div>
             </div>
           </header>
 
           {/* Messages */}
           <div className="flex-1 overflow-auto p-4 space-y-4">
             {messages.length === 0 && (
-              <div className="text-center py-12">
-                <div className="text-4xl mb-4">🤖</div>
-                <h2 className="text-xl font-semibold text-white mb-2">Grok Sandbox</h2>
-                <p className="text-spawn-muted max-w-md mx-auto">
-                  I can execute commands, write code, clone repos, and create visual artifacts.
-                  Try asking me to build something!
+              <div className="flex flex-col items-center justify-center h-full">
+                <h1 className="text-3xl font-bold text-white mb-2">What can I help you build?</h1>
+                <p className="text-spawn-muted text-sm mb-8">
+                  Full sandbox access • Execute code • Create artifacts
                 </p>
-                <div className="mt-6 flex flex-wrap gap-2 justify-center">
+                <div className="flex flex-wrap gap-2 justify-center max-w-xl">
                   {[
-                    'Create a React counter with animations',
-                    'Show me the files in /workspace',
-                    'Clone https://github.com/denoland/fresh',
-                    'Create a mermaid diagram of a microservices architecture',
-                  ].map((prompt, i) => (
+                    { icon: '🎯', text: 'React todo app' },
+                    { icon: '📊', text: 'Dashboard with charts' },
+                    { icon: '🔀', text: 'Mermaid diagram' },
+                    { icon: '🖥️', text: 'Run terminal commands' },
+                    { icon: '🛠️', text: 'Show available tools' },
+                  ].map((item, i) => (
                     <button
                       key={i}
-                      onClick={() => { setInput(prompt); inputRef.current?.focus(); }}
-                      className="px-3 py-1.5 bg-spawn-surface hover:bg-spawn-border text-sm text-spawn-text rounded-lg transition-colors"
+                      onClick={() => { setInput(item.text); inputRef.current?.focus(); }}
+                      className="flex items-center gap-2 px-4 py-2 bg-spawn-surface hover:bg-spawn-border text-sm text-spawn-text rounded-full border border-spawn-border hover:border-spawn-muted transition-all"
                     >
-                      {prompt}
+                      <span>{item.icon}</span>
+                      <span>{item.text}</span>
                     </button>
                   ))}
                 </div>
@@ -418,11 +1086,12 @@ new ResizeObserver(() => parent.postMessage({ type: 'resize', height: document.b
 
             {thinking && (
               <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0">
-                  🤖
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center flex-shrink-0">
+                  <SpinnerCircle size={18} className="text-white" />
                 </div>
-                <div className="bg-spawn-surface rounded-2xl px-4 py-2">
-                  <p className="text-sm text-spawn-muted typing-cursor">{thinking}</p>
+                <div className="bg-spawn-surface rounded-2xl px-4 py-3 flex items-center gap-3">
+                  <SpinnerEllipsis size={20} className="text-purple-400" />
+                  <span className="text-sm text-spawn-muted">{thinking}</span>
                 </div>
               </div>
             )}
@@ -430,30 +1099,52 @@ new ResizeObserver(() => parent.postMessage({ type: 'resize', height: document.b
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
-          <div className="border-t border-spawn-border p-4 bg-spawn-surface flex-shrink-0">
-            <div className="flex gap-3 max-w-4xl mx-auto">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask Grok to build something..."
-                className="flex-1 bg-spawn-bg border border-spawn-border rounded-xl px-4 py-3 text-sm text-white placeholder-spawn-muted resize-none focus:outline-none focus:border-purple-600 transition-colors"
-                rows={2}
-                disabled={loading}
-              />
-              <button
-                onClick={sendMessage}
-                disabled={loading || !input.trim()}
-                className="px-6 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-medium transition-colors"
-              >
-                {loading ? '...' : 'Send'}
-              </button>
+          {/* Input - v0 style */}
+          <div className="p-4 bg-spawn-bg flex-shrink-0">
+            <div className="max-w-3xl mx-auto">
+              <div className="relative bg-spawn-surface rounded-xl border border-spawn-border focus-within:border-purple-600/50 transition-colors">
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    // Auto-resize
+                    e.target.style.height = '56px';
+                    e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Ask ARCHITECT to build something..."
+                  className="w-full bg-transparent px-4 py-4 text-sm text-white placeholder-spawn-muted resize-none focus:outline-none auto-resize-textarea"
+                  style={{ minHeight: '56px' }}
+                  disabled={loading}
+                />
+                <div className="flex items-center justify-between px-3 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-spawn-muted">Enter to send</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={sendMessage}
+                      disabled={loading || !input.trim()}
+                      className={`p-2 rounded-lg transition-all ${
+                        input.trim() && !loading
+                          ? 'bg-white text-black hover:bg-gray-200'
+                          : 'bg-spawn-border text-spawn-muted cursor-not-allowed'
+                      }`}
+                    >
+                      {loading ? (
+                        <SpinnerCircle size={16} className="text-spawn-muted" />
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="text-xs text-spawn-muted text-center mt-2">
-              Press Enter to send, Shift+Enter for new line
-            </div>
+          </div>
           </div>
         </div>
       );

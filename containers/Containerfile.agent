@@ -1,0 +1,87 @@
+# Spawn Agent Container
+# A fully-equipped AI agent sandbox with Node.js, Python, Rust, and dev tools
+
+FROM docker.io/library/node:22-bookworm-slim
+
+LABEL maintainer="spawn.new"
+LABEL description="Spawn AI Agent Sandbox - Full development environment"
+LABEL version="1.0.0"
+
+# Avoid prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Core tools
+    curl wget ca-certificates gnupg \
+    git git-lfs openssh-client \
+    # Build essentials
+    build-essential pkg-config \
+    # Python
+    python3 python3-pip python3-venv python3-dev \
+    # Dev tools
+    ripgrep fd-find jq tree htop \
+    # Networking
+    netcat-openbsd dnsutils iputils-ping \
+    # Process management
+    supervisor \
+    # Compression
+    zip unzip tar gzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install pnpm globally
+RUN npm install -g pnpm@latest
+
+# Create agent user (non-root)
+RUN useradd -m -s /bin/bash agent && \
+    mkdir -p /home/agent/workspace /home/agent/.config && \
+    chown -R agent:agent /home/agent
+
+# Set working directory
+WORKDIR /app
+
+# Copy sandbox server
+COPY sandbox-server/ /app/
+
+# Install Node.js dependencies
+RUN pnpm install --frozen-lockfile 2>/dev/null || npm install
+
+# Create Python virtual environment
+RUN python3 -m venv /app/.venv && \
+    /app/.venv/bin/pip install --upgrade pip && \
+    /app/.venv/bin/pip install \
+        pygame numpy pandas matplotlib requests \
+        httpx aiohttp websockets \
+        pydantic fastapi uvicorn
+
+# Environment variables
+ENV NODE_ENV=production
+ENV PORT=3080
+ENV WORKSPACE_PATH=/home/agent/workspace
+ENV PYTHONPATH=/app/.venv/lib/python3.11/site-packages
+ENV PATH="/app/.venv/bin:${PATH}"
+
+# Expose port
+EXPOSE 3080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3080/health || exit 1
+
+# Copy entrypoint script
+COPY containers/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Switch to agent user for security
+USER agent
+WORKDIR /home/agent/workspace
+
+# Default command
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["node", "/app/server.js"]

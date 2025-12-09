@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spawn Control Panel</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #0a0a0a; color: #e5e5e5; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .status-online { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+    .status-offline { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
+    .status-unknown { background: #6b7280; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .tab-btn.active { background: #7c3aed; color: white; }
+    .log-entry { font-family: monospace; font-size: 12px; padding: 4px 8px; border-bottom: 1px solid #1f2937; }
+  </style>
+</head>
+<body class="font-sans min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-gray-800 bg-gray-950 sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-6 py-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-xl font-bold">S</div>
+          <div>
+            <h1 class="text-xl font-bold text-white">Spawn Control Panel</h1>
+            <p class="text-xs text-gray-500">System Administration</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-4">
+          <div id="rust-status" class="flex items-center gap-2">
+            <div class="status-dot status-unknown"></div>
+            <span class="text-xs text-gray-400">Rust API</span>
+          </div>
+          <div id="sandbox-status" class="flex items-center gap-2">
+            <div class="status-dot status-unknown"></div>
+            <span class="text-xs text-gray-400">Sandbox</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="flex gap-2 mt-4">
+        <button onclick="showTab('status')" class="tab-btn active px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 hover:bg-gray-700">
+          Status
+        </button>
+        <button onclick="showTab('prompts')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 hover:bg-gray-700">
+          Prompts
+        </button>
+        <button onclick="showTab('rules')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 hover:bg-gray-700">
+          Rules
+        </button>
+        <button onclick="showTab('terminals')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 hover:bg-gray-700">
+          Terminals
+        </button>
+        <button onclick="showTab('sandbox')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 hover:bg-gray-700">
+          Sandbox
+        </button>
+        <button onclick="showTab('logs')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 hover:bg-gray-700">
+          Flow Log
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-6 py-8">
+
+    <!-- ==================== STATUS TAB ==================== -->
+    <div id="tab-status" class="tab-content active">
+      <h2 class="text-2xl font-bold text-white mb-6">System Status</h2>
+
+      <div class="grid grid-cols-3 gap-6 mb-8">
+        <!-- Rust API Card -->
+        <div class="bg-gray-900 rounded-xl p-6 border border-gray-800">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-white">Rust API</h3>
+            <div id="rust-api-indicator" class="status-dot status-unknown"></div>
+          </div>
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between">
+              <span class="text-gray-400">Port</span>
+              <span class="text-white font-mono">3000</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Status</span>
+              <span id="rust-api-status" class="text-gray-400">Checking...</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Latency</span>
+              <span id="rust-api-latency" class="text-white font-mono">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sandbox Server Card -->
+        <div class="bg-gray-900 rounded-xl p-6 border border-gray-800">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-white">Sandbox Server</h3>
+            <div id="sandbox-indicator" class="status-dot status-unknown"></div>
+          </div>
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between">
+              <span class="text-gray-400">Port</span>
+              <span class="text-white font-mono">3080</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Status</span>
+              <span id="sandbox-api-status" class="text-gray-400">Checking...</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Workspace</span>
+              <span id="sandbox-workspace" class="text-white font-mono text-xs">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- OpenRouter Card -->
+        <div class="bg-gray-900 rounded-xl p-6 border border-gray-800">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-white">OpenRouter</h3>
+            <div id="openrouter-indicator" class="status-dot status-unknown"></div>
+          </div>
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between">
+              <span class="text-gray-400">Model</span>
+              <span class="text-white font-mono text-xs">grok-3-mini</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Status</span>
+              <span id="openrouter-status" class="text-gray-400">Unknown</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Actions -->
+      <h3 class="text-xl font-semibold text-white mb-4">Quick Actions</h3>
+      <div class="flex gap-3 mb-8">
+        <button onclick="refreshStatus()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition-colors">
+          Refresh Status
+        </button>
+        <a href="/sandbox" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors">
+          Open Sandbox Chat
+        </a>
+        <a href="/docs" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors">
+          API Documentation
+        </a>
+      </div>
+
+      <!-- Missions -->
+      <h3 class="text-xl font-semibold text-white mb-4">Recent Missions</h3>
+      <div id="missions-list" class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <div class="p-4 text-gray-400 text-sm">Loading missions...</div>
+      </div>
+    </div>
+
+    <!-- ==================== PROMPTS TAB ==================== -->
+    <div id="tab-prompts" class="tab-content">
+      <h2 class="text-2xl font-bold text-white mb-6">System Prompts</h2>
+
+      <div class="space-y-6">
+        <!-- Chat Prompt -->
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-gray-800 px-4 py-3 flex items-center justify-between">
+            <span class="font-semibold text-white">Chat System Prompt</span>
+            <button onclick="savePrompt('chat')" class="px-3 py-1 bg-purple-600 hover:bg-purple-700 rounded text-sm font-medium">
+              Save
+            </button>
+          </div>
+          <div class="p-4">
+            <textarea id="chat-prompt" class="w-full h-40 bg-gray-950 border border-gray-700 rounded-lg p-3 text-sm font-mono text-white resize-none focus:outline-none focus:border-purple-500" placeholder="Enter chat system prompt...">You are Grok, a helpful and slightly witty AI assistant for spawn.new. Help users build software, write code, and debug issues. Be concise but thorough.</textarea>
+          </div>
+        </div>
+
+        <!-- Agent Prompt -->
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-gray-800 px-4 py-3 flex items-center justify-between">
+            <span class="font-semibold text-white">Agent System Prompt</span>
+            <button onclick="savePrompt('agent')" class="px-3 py-1 bg-purple-600 hover:bg-purple-700 rounded text-sm font-medium">
+              Save
+            </button>
+          </div>
+          <div class="p-4">
+            <textarea id="agent-prompt" class="w-full h-64 bg-gray-950 border border-gray-700 rounded-lg p-3 text-sm font-mono text-white resize-none focus:outline-none focus:border-purple-500" placeholder="Enter agent system prompt...">You are an autonomous AI agent. You can execute shell commands, read/write files, and complete complex tasks.
+
+Available tools:
+- shell: Execute safe shell commands
+- read_file: Read file contents
+- write_file: Write content to files
+- list_files: List directory contents
+
+Guidelines:
+- Be proactive and complete tasks autonomously
+- Test your work by running commands
+- Report progress and results clearly</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== RULES TAB ==================== -->
+    <div id="tab-rules" class="tab-content">
+      <h2 class="text-2xl font-bold text-white mb-6">Security Rules</h2>
+
+      <div class="grid grid-cols-2 gap-6">
+        <!-- MUST Rules -->
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-green-900/30 px-4 py-3 flex items-center justify-between border-b border-gray-800">
+            <span class="font-semibold text-green-400">MUST Rules</span>
+            <button onclick="saveRules('must')" class="px-3 py-1 bg-green-600 hover:bg-green-700 rounded text-sm font-medium">
+              Save
+            </button>
+          </div>
+          <div class="p-4">
+            <p class="text-sm text-gray-400 mb-3">Commands/behaviors that MUST be followed:</p>
+            <textarea id="must-rules" class="w-full h-48 bg-gray-950 border border-gray-700 rounded-lg p-3 text-sm font-mono text-white resize-none focus:outline-none focus:border-green-500" placeholder="One rule per line...">Always confirm before deleting files
+Log all command executions
+Use relative paths within workspace
+Report errors immediately</textarea>
+          </div>
+        </div>
+
+        <!-- MUST NOT Rules -->
+        <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div class="bg-red-900/30 px-4 py-3 flex items-center justify-between border-b border-gray-800">
+            <span class="font-semibold text-red-400">MUST NOT Rules</span>
+            <button onclick="saveRules('must_not')" class="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm font-medium">
+              Save
+            </button>
+          </div>
+          <div class="p-4">
+            <p class="text-sm text-gray-400 mb-3">Commands/behaviors that are FORBIDDEN:</p>
+            <textarea id="must-not-rules" class="w-full h-48 bg-gray-950 border border-gray-700 rounded-lg p-3 text-sm font-mono text-white resize-none focus:outline-none focus:border-red-500" placeholder="One rule per line...">rm -rf /
+sudo commands
+chmod 777
+Access outside workspace
+Download from untrusted sources
+Execute base64 encoded commands</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== TERMINALS TAB ==================== -->
+    <div id="tab-terminals" class="tab-content">
+      <h2 class="text-2xl font-bold text-white mb-6">Terminal Sessions</h2>
+
+      <div class="flex gap-3 mb-6">
+        <button onclick="createTerminal()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition-colors">
+          + New Terminal
+        </button>
+        <button onclick="refreshTerminals()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors">
+          Refresh
+        </button>
+      </div>
+
+      <div id="terminals-list" class="space-y-4">
+        <div class="bg-gray-900 rounded-xl p-6 border border-gray-800 text-center text-gray-400">
+          No active terminal sessions. Click "New Terminal" to create one.
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SANDBOX TAB ==================== -->
+    <div id="tab-sandbox" class="tab-content">
+      <h2 class="text-2xl font-bold text-white mb-6">Sandbox Configuration</h2>
+
+      <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <div class="bg-gray-800 px-4 py-3">
+          <span class="font-semibold text-white">Sandbox Settings</span>
+        </div>
+        <div class="p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <label class="text-white font-medium">Enable Sandbox Integration</label>
+              <p class="text-sm text-gray-400">Route complex tasks to sandbox server</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="sandbox-enabled" class="sr-only peer" checked>
+              <div class="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-purple-600 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+            </label>
+          </div>
+
+          <div>
+            <label class="text-white font-medium block mb-2">Sandbox Endpoint</label>
+            <input type="text" id="sandbox-endpoint" class="w-full bg-gray-950 border border-gray-700 rounded-lg p-3 text-sm font-mono text-white focus:outline-none focus:border-purple-500" value="http://localhost:3080">
+          </div>
+
+          <div>
+            <label class="text-white font-medium block mb-2">Max Iterations</label>
+            <input type="number" id="sandbox-max-iterations" class="w-32 bg-gray-950 border border-gray-700 rounded-lg p-3 text-sm font-mono text-white focus:outline-none focus:border-purple-500" value="10" min="1" max="50">
+          </div>
+
+          <div>
+            <label class="text-white font-medium block mb-2">Enabled Tools</label>
+            <div class="flex flex-wrap gap-2 mt-2">
+              <label class="flex items-center gap-2 bg-gray-800 px-3 py-2 rounded-lg cursor-pointer">
+                <input type="checkbox" checked class="accent-purple-600"> execute_command
+              </label>
+              <label class="flex items-center gap-2 bg-gray-800 px-3 py-2 rounded-lg cursor-pointer">
+                <input type="checkbox" checked class="accent-purple-600"> read_file
+              </label>
+              <label class="flex items-center gap-2 bg-gray-800 px-3 py-2 rounded-lg cursor-pointer">
+                <input type="checkbox" checked class="accent-purple-600"> write_file
+              </label>
+              <label class="flex items-center gap-2 bg-gray-800 px-3 py-2 rounded-lg cursor-pointer">
+                <input type="checkbox" checked class="accent-purple-600"> list_files
+              </label>
+              <label class="flex items-center gap-2 bg-gray-800 px-3 py-2 rounded-lg cursor-pointer">
+                <input type="checkbox" checked class="accent-purple-600"> create_artifact
+              </label>
+            </div>
+          </div>
+
+          <div class="pt-4 border-t border-gray-800">
+            <button onclick="saveSandboxConfig()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition-colors">
+              Save Configuration
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== LOGS TAB ==================== -->
+    <div id="tab-logs" class="tab-content">
+      <h2 class="text-2xl font-bold text-white mb-6">Flow Log</h2>
+
+      <div class="flex gap-3 mb-4">
+        <button onclick="clearLogs()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors">
+          Clear
+        </button>
+        <label class="flex items-center gap-2 text-sm text-gray-400">
+          <input type="checkbox" id="auto-scroll" checked class="accent-purple-600"> Auto-scroll
+        </label>
+      </div>
+
+      <div id="flow-log" class="bg-gray-900 rounded-xl border border-gray-800 h-96 overflow-y-auto">
+        <div class="log-entry text-gray-500">Waiting for events...</div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // Configuration
+    const RUST_API = 'http://localhost:3000';
+    const SANDBOX_API = 'http://localhost:3080';
+
+    // Tab switching
+    function showTab(tabName) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById('tab-' + tabName).classList.add('active');
+      event.target.classList.add('active');
+    }
+
+    // Status checking
+    async function checkRustAPI() {
+      const start = Date.now();
+      try {
+        const res = await fetch(`${RUST_API}/health`, { timeout: 3000 });
+        const latency = Date.now() - start;
+        const indicator = document.getElementById('rust-api-indicator');
+        const status = document.getElementById('rust-api-status');
+        const latencyEl = document.getElementById('rust-api-latency');
+        const headerStatus = document.querySelector('#rust-status .status-dot');
+
+        if (res.ok) {
+          indicator.className = 'status-dot status-online';
+          headerStatus.className = 'status-dot status-online';
+          status.textContent = 'Online';
+          status.className = 'text-green-400';
+          latencyEl.textContent = `${latency}ms`;
+        } else {
+          throw new Error('Not OK');
+        }
+      } catch (e) {
+        document.getElementById('rust-api-indicator').className = 'status-dot status-offline';
+        document.querySelector('#rust-status .status-dot').className = 'status-dot status-offline';
+        document.getElementById('rust-api-status').textContent = 'Offline';
+        document.getElementById('rust-api-status').className = 'text-red-400';
+      }
+    }
+
+    async function checkSandbox() {
+      try {
+        const res = await fetch(`${SANDBOX_API}/health`);
+        const data = await res.json();
+        const indicator = document.getElementById('sandbox-indicator');
+        const status = document.getElementById('sandbox-api-status');
+        const workspace = document.getElementById('sandbox-workspace');
+        const headerStatus = document.querySelector('#sandbox-status .status-dot');
+
+        if (res.ok) {
+          indicator.className = 'status-dot status-online';
+          headerStatus.className = 'status-dot status-online';
+          status.textContent = 'Online';
+          status.className = 'text-green-400';
+          workspace.textContent = data.workspace?.split('/').pop() || '--';
+        }
+      } catch (e) {
+        document.getElementById('sandbox-indicator').className = 'status-dot status-offline';
+        document.querySelector('#sandbox-status .status-dot').className = 'status-dot status-offline';
+        document.getElementById('sandbox-api-status').textContent = 'Offline';
+        document.getElementById('sandbox-api-status').className = 'text-red-400';
+      }
+    }
+
+    async function loadMissions() {
+      try {
+        const res = await fetch(`${RUST_API}/api/missions`);
+        const missions = await res.json();
+        const container = document.getElementById('missions-list');
+
+        if (missions.length === 0) {
+          container.innerHTML = '<div class="p-4 text-gray-400 text-sm">No missions yet.</div>';
+          return;
+        }
+
+        container.innerHTML = missions.map(m => `
+          <div class="flex items-center justify-between p-4 border-b border-gray-800 last:border-0">
+            <div>
+              <div class="font-medium text-white">${m.goal}</div>
+              <div class="text-xs text-gray-500">${m.id} - ${m.created_at}</div>
+            </div>
+            <span class="px-2 py-1 rounded text-xs ${
+              m.status === 'completed' ? 'bg-green-900/50 text-green-400' :
+              m.status === 'running' ? 'bg-blue-900/50 text-blue-400' :
+              m.status === 'failed' ? 'bg-red-900/50 text-red-400' :
+              'bg-gray-800 text-gray-400'
+            }">${m.status}</span>
+          </div>
+        `).join('');
+      } catch (e) {
+        document.getElementById('missions-list').innerHTML = '<div class="p-4 text-red-400 text-sm">Failed to load missions</div>';
+      }
+    }
+
+    function refreshStatus() {
+      checkRustAPI();
+      checkSandbox();
+      loadMissions();
+      addLog('system', 'Status refreshed');
+    }
+
+    // Prompts
+    async function savePrompt(type) {
+      const prompts = {
+        chat: document.getElementById('chat-prompt').value,
+        agent: document.getElementById('agent-prompt').value,
+      };
+      try {
+        const res = await fetch(`${RUST_API}/api/admin/prompts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(prompts),
+        });
+        const data = await res.json();
+        if (data.success) {
+          addLog('config', `Saved prompts to backend`);
+        } else {
+          throw new Error(data.error || 'Unknown error');
+        }
+      } catch (e) {
+        addLog('error', `Failed to save prompts: ${e.message}`);
+        // Fallback to localStorage
+        localStorage.setItem('spawn_prompts', JSON.stringify(prompts));
+        addLog('config', 'Saved prompts to localStorage as fallback');
+      }
+    }
+
+    // Rules - save to config
+    async function saveRules(type) {
+      const config = await loadConfigFromBackend();
+      config.must_rules = document.getElementById('must-rules').value.split('\n').filter(r => r.trim());
+      config.must_not_rules = document.getElementById('must-not-rules').value.split('\n').filter(r => r.trim());
+
+      try {
+        const res = await fetch(`${RUST_API}/api/admin/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config),
+        });
+        const data = await res.json();
+        if (data.success) {
+          addLog('config', `Saved ${type} rules to backend`);
+        } else {
+          throw new Error(data.error || 'Unknown error');
+        }
+      } catch (e) {
+        addLog('error', `Failed to save rules: ${e.message}`);
+      }
+    }
+
+    // Sandbox config
+    async function saveSandboxConfig() {
+      const config = {
+        sandbox_enabled: document.getElementById('sandbox-enabled').checked,
+        sandbox_endpoint: document.getElementById('sandbox-endpoint').value,
+        sandbox_max_iterations: parseInt(document.getElementById('sandbox-max-iterations').value),
+        must_rules: document.getElementById('must-rules').value.split('\n').filter(r => r.trim()),
+        must_not_rules: document.getElementById('must-not-rules').value.split('\n').filter(r => r.trim()),
+      };
+
+      try {
+        const res = await fetch(`${RUST_API}/api/admin/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config),
+        });
+        const data = await res.json();
+        if (data.success) {
+          addLog('config', 'Saved sandbox configuration to backend');
+        } else {
+          throw new Error(data.error || 'Unknown error');
+        }
+      } catch (e) {
+        addLog('error', `Failed to save config: ${e.message}`);
+        localStorage.setItem('spawn_sandbox_config', JSON.stringify(config));
+        addLog('config', 'Saved config to localStorage as fallback');
+      }
+    }
+
+    async function loadConfigFromBackend() {
+      try {
+        const res = await fetch(`${RUST_API}/api/admin/config`);
+        return await res.json();
+      } catch (e) {
+        return {
+          sandbox_enabled: true,
+          sandbox_endpoint: 'http://localhost:3080',
+          sandbox_max_iterations: 10,
+          must_rules: [],
+          must_not_rules: [],
+        };
+      }
+    }
+
+    // Terminals
+    function createTerminal() {
+      addLog('terminal', 'Creating new terminal session...');
+      // This would connect to WebSocket in the real implementation
+      alert('Terminal creation via WebSocket coming soon!');
+    }
+
+    function refreshTerminals() {
+      addLog('terminal', 'Refreshing terminal list...');
+    }
+
+    // Logging
+    function addLog(type, message) {
+      const log = document.getElementById('flow-log');
+      const time = new Date().toLocaleTimeString();
+      const colors = {
+        system: 'text-blue-400',
+        config: 'text-purple-400',
+        terminal: 'text-green-400',
+        api: 'text-yellow-400',
+        error: 'text-red-400',
+      };
+
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `<span class="text-gray-500">${time}</span> <span class="${colors[type] || 'text-gray-400'}">[${type}]</span> ${message}`;
+      log.appendChild(entry);
+
+      if (document.getElementById('auto-scroll').checked) {
+        log.scrollTop = log.scrollHeight;
+      }
+    }
+
+    function clearLogs() {
+      document.getElementById('flow-log').innerHTML = '<div class="log-entry text-gray-500">Log cleared</div>';
+    }
+
+    // Load saved data from backend
+    async function loadSavedData() {
+      // Load prompts
+      try {
+        const res = await fetch(`${RUST_API}/api/admin/prompts`);
+        const prompts = await res.json();
+        document.getElementById('chat-prompt').value = prompts.chat || '';
+        document.getElementById('agent-prompt').value = prompts.agent || '';
+        addLog('api', 'Loaded prompts from backend');
+      } catch (e) {
+        addLog('error', 'Failed to load prompts from backend');
+      }
+
+      // Load config
+      try {
+        const config = await loadConfigFromBackend();
+        document.getElementById('sandbox-enabled').checked = config.sandbox_enabled;
+        document.getElementById('sandbox-endpoint').value = config.sandbox_endpoint;
+        document.getElementById('sandbox-max-iterations').value = config.sandbox_max_iterations;
+        document.getElementById('must-rules').value = (config.must_rules || []).join('\n');
+        document.getElementById('must-not-rules').value = (config.must_not_rules || []).join('\n');
+        addLog('api', 'Loaded config from backend');
+      } catch (e) {
+        addLog('error', 'Failed to load config from backend');
+      }
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', async () => {
+      await loadSavedData();
+      refreshStatus();
+      addLog('system', 'Control Panel initialized');
+
+      // Auto-refresh status every 30 seconds
+      setInterval(() => {
+        checkRustAPI();
+        checkSandbox();
+      }, 30000);
+    });
+  </script>
+</body>
+</html>
