@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check:*)",
+      "Bash(curl:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs:*)",
+      "Bash(chmod:*)",
+      "Bash(pkill:*)",
+      "WebSearch",
+      "Bash(node -e:*)",
+      "Bash(source:*)",
+      "Bash(echo:*)",
+      "WebFetch(domain:openrouter.ai)",
+      "Bash(sudo useradd:*)",
+      "Bash(podman:*)",
+      "Bash(docker:*)",
+      "Bash(apt-cache policy:*)",
+      "Bash(sudo -n apt-get update:*)",
+      "WebFetch(domain:gvisor.dev)",
+      "Bash(sudo apt-get:*)",
+      "Bash(sudo apt-get install:*)",
+      "Bash(podman-compose:*)",
+      "Bash(pip3 show:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
