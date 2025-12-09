@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: docker.io/pgvector/pgvector:pg16
+    container_name: spawn-postgres
+    environment:
+      POSTGRES_USER: spawn
+      POSTGRES_PASSWORD: spawn_secret
+      POSTGRES_DB: spawn_logs
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spawn -d spawn_logs"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: docker.io/library/redis:7-alpine
+    container_name: spawn-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:

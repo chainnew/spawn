@@ -7,11 +7,54 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import Database from 'better-sqlite3';
 
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execAsync = promisify(exec);
+
+// ==================== Logging System ====================
+const LOG_BUFFER_SIZE = 1000; // Keep last 1000 log entries
+const logBuffer = [];
+const logLevels = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
+
+function log(level, category, message, data = null) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    level,
+    category,
+    message,
+    data: data ? (typeof data === 'string' ? data : JSON.stringify(data).slice(0, 500)) : null
+  };
+
+  logBuffer.push(entry);
+  if (logBuffer.length > LOG_BUFFER_SIZE) logBuffer.shift();
+
+  // Also output to console
+  const prefix = `[${entry.timestamp}] [${level}] [${category}]`;
+  if (level === 'ERROR') console.error(prefix, message, data || '');
+  else if (level === 'WARN') console.warn(prefix, message, data || '');
+  else console.log(prefix, message, data || '');
+
+  return entry;
+}
+
+// Convenience methods
+const logger = {
+  debug: (cat, msg, data) => log('DEBUG', cat, msg, data),
+  info: (cat, msg, data) => log('INFO', cat, msg, data),
+  warn: (cat, msg, data) => log('WARN', cat, msg, data),
+  error: (cat, msg, data) => log('ERROR', cat, msg, data),
+
+  // Specific categories
+  request: (msg, data) => log('INFO', 'REQUEST', msg, data),
+  tool: (msg, data) => log('INFO', 'TOOL', msg, data),
+  llm: (msg, data) => log('INFO', 'LLM', msg, data),
+  artifact: (msg, data) => log('INFO', 'ARTIFACT', msg, data),
+  embed: (msg, data) => log('INFO', 'EMBED', msg, data),
+  vector: (msg, data) => log('INFO', 'VECTOR', msg, data),
+};
 
 const app = express();
 const PORT = process.env.PORT || 3080;
@@ -715,6 +758,59 @@ RUNTIMES: 'browser', 'node', 'deno', 'bun', 'python', 'python:venv', 'rust', 'go
       },
     },
   },
+  // === SEMANTIC SEARCH TOOLS ===
+  {
+    type: 'function',
+    function: {
+      name: 'semantic_search',
+      description: 'Search your knowledge base using semantic similarity. Finds documents with similar meaning to your query, not just keyword matches. Use this to recall information from previously stored documents, find related content, or answer questions based on stored knowledge.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Natural language query to search for semantically similar documents' },
+          collection: { type: 'string', description: 'Optional: limit search to a specific collection (e.g., "docs", "code", "notes")' },
+          limit: { type: 'number', description: 'Maximum number of results (default: 5)' },
+          threshold: { type: 'number', description: 'Minimum similarity score 0-1 (default: 0.7)' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'store_knowledge',
+      description: 'Store a document in the knowledge base for future semantic search. Use this to remember important information, save code snippets, documentation, notes, or any content that should be searchable later.',
+      parameters: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', description: 'The text content to store and make searchable' },
+          collection: { type: 'string', description: 'Collection name to organize documents (e.g., "docs", "code", "notes")' },
+          metadata: {
+            type: 'object',
+            description: 'Optional metadata like source, author, tags, etc.',
+            properties: {
+              title: { type: 'string' },
+              source: { type: 'string' },
+              tags: { type: 'array', items: { type: 'string' } },
+            }
+          },
+        },
+        required: ['content'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_knowledge_collections',
+      description: 'List all knowledge collections and their document counts. Use this to see what knowledge has been stored.',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+  },
 ];
 
 // ==================== Tool Execution ====================
@@ -1111,6 +1207,57 @@ async function executeTool(name, args) {
       }
     }
 
+    // === SEMANTIC SEARCH TOOLS ===
+    case 'semantic_search': {
+      try {
+        const results = await searchSimilar(args.query, {
+          limit: args.limit || 5,
+          collection: args.collection || null,
+          threshold: args.threshold || 0.7
+        });
+        return {
+          success: true,
+          results,
+          count: results.length,
+          query: args.query,
+          collection: args.collection || 'all'
+        };
+      } catch (err) {
+        return { success: false, error: `Search failed: ${err.message}` };
+      }
+    }
+
+    case 'store_knowledge': {
+      try {
+        const result = await storeDocument(
+          args.content,
+          args.metadata || {},
+          args.collection || 'default'
+        );
+        return {
+          success: true,
+          id: result.id,
+          collection: result.collection,
+          preview: args.content.slice(0, 100) + (args.content.length > 100 ? '...' : '')
+        };
+      } catch (err) {
+        return { success: false, error: `Store failed: ${err.message}` };
+      }
+    }
+
+    case 'list_knowledge_collections': {
+      try {
+        const collections = listCollections();
+        return {
+          success: true,
+          collections,
+          total_documents: collections.reduce((sum, c) => sum + c.count, 0)
+        };
+      } catch (err) {
+        return { success: false, error: `List failed: ${err.message}` };
+      }
+    }
+
     default:
       return { success: false, error: `Unknown tool: ${name}` };
   }
@@ -1215,6 +1362,201 @@ terminal_buffer({ name: "dev", lines: 20 })  // Check output
 - **terminal-app** (port 3001): PTY sessions, code editor buffers
 - **sandbox-server** (port 3080): This instance - Grok AI + tools
 
+## GROK ADVANCED CAPABILITIES
+
+You are powered by Grok and have access to these advanced features:
+
+### Live Search (Real-time Web/X/News Search)
+Search the web, X (Twitter), and news sources for current information.
+
+**Enable with \`search_parameters\` in API requests:**
+\`\`\`javascript
+// Auto mode - model decides when to search
+search_parameters: { mode: "auto" }
+
+// Force search on
+search_parameters: { mode: "on" }
+
+// Search specific sources
+search_parameters: {
+  mode: "auto",
+  sources: [
+    { type: "web" },           // Web search
+    { type: "x" },             // X/Twitter posts
+    { type: "news" },          // News articles
+    { type: "rss", links: ["https://example.com/feed.xml"] }  // RSS feeds
+  ],
+  from_date: "2024-01-01",     // Optional date range
+  to_date: "2024-12-31",
+  max_search_results: 20,      // Limit sources (default 20)
+  return_citations: true       // Include source URLs
+}
+
+// Web source options
+{ type: "web", country: "US", allowed_websites: ["github.com", "stackoverflow.com"] }
+{ type: "web", excluded_websites: ["wikipedia.org"] }
+
+// X source options
+{ type: "x", included_x_handles: ["elonmusk", "xai"] }
+{ type: "x", post_favorite_count: 1000, post_view_count: 20000 }  // Filter by engagement
+\`\`\`
+
+**Use cases:**
+- Current events and news
+- Real-time market data
+- Social media sentiment
+- Research with up-to-date info
+
+### Structured Outputs (Guaranteed JSON Schema)
+Force responses to match a specific JSON schema - guaranteed type-safe output.
+
+\`\`\`javascript
+// Define schema with Pydantic-style structure
+const schema = {
+  type: "object",
+  properties: {
+    vendor_name: { type: "string", description: "Name of vendor" },
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          description: { type: "string" },
+          quantity: { type: "integer" },
+          price: { type: "number" }
+        }
+      }
+    },
+    total: { type: "number" }
+  },
+  required: ["vendor_name", "items", "total"]
+}
+
+// Response will ALWAYS match this schema
+\`\`\`
+
+**Supported types:** string, number, integer, float, object, array, boolean, enum, anyOf
+
+**Use cases:**
+- Invoice/document parsing
+- Entity extraction
+- Data validation
+- Structured reports
+
+### Remote MCP Tools (External Tool Servers)
+Connect to external MCP (Model Context Protocol) servers for additional capabilities.
+
+\`\`\`javascript
+// Add MCP server to tools
+tools: [
+  {
+    type: "mcp",
+    server_url: "https://mcp.deepwiki.com/mcp",
+    server_label: "deepwiki",
+    server_description: "Documentation and code analysis",
+    allowed_tool_names: ["search_docs", "analyze_code"],  // Optional: filter tools
+    authorization: "Bearer <token>",  // Optional auth
+    extra_headers: { "X-Custom": "value" }
+  }
+]
+
+// Multi-server setup
+tools: [
+  { type: "mcp", server_url: "https://mcp.deepwiki.com/mcp", server_label: "deepwiki" },
+  { type: "mcp", server_url: "https://your-tools.com/mcp", server_label: "custom" },
+  { type: "mcp", server_url: "https://api.example.com/tools", server_label: "api" }
+]
+\`\`\`
+
+**Available MCP servers:**
+- \`mcp.deepwiki.com\` - GitHub repo documentation and analysis
+- Custom servers for your specific integrations
+
+### Collections Search (RAG / Knowledge Base)
+Search through uploaded document collections for retrieval-augmented generation.
+
+\`\`\`javascript
+// Enable collections search in tools
+tools: [
+  {
+    type: "collections_search",
+    collection_ids: ["collection_abc123"]  // Your uploaded collections
+  }
+]
+
+// Workflow:
+// 1. Create collection via API
+// 2. Upload documents (PDF, text, CSV, etc.)
+// 3. Wait for processing
+// 4. Query with collections_search tool
+
+// The model autonomously searches your documents and cites sources
+// Citations use format: collections://collection_id/files/file_id
+\`\`\`
+
+**Use cases:**
+- Enterprise knowledge bases
+- Financial document analysis (SEC filings, reports)
+- Customer support with product docs
+- Research and due diligence
+- Compliance and legal document search
+
+### Code Execution (Server-Side)
+Run Python code server-side for calculations and data processing.
+
+\`\`\`javascript
+// Enable code execution
+tools: [
+  { type: "code_execution" }
+]
+// or with xAI SDK:
+tools: [...tools, { type: "code_interpreter" }]
+\`\`\`
+
+**Use cases:**
+- Mathematical calculations
+- Data analysis and visualization
+- Algorithm prototyping
+- Quick computations during reasoning
+
+### Function Calling Best Practices
+\`\`\`javascript
+// Parallel tool calls (enabled by default)
+parallel_tool_calls: true
+
+// Tool choice modes
+tool_choice: "auto"      // Model decides (default)
+tool_choice: "required"  // Force tool use
+tool_choice: "none"      // Disable tools
+tool_choice: { type: "function", function: { name: "specific_tool" } }  // Force specific
+
+// Tool result format
+{
+  role: "tool",
+  tool_call_id: "<id from response>",
+  content: JSON.stringify(result)
+}
+\`\`\`
+
+### Combining Capabilities
+Mix and match for powerful workflows:
+
+\`\`\`javascript
+// Example: Analyze internal docs + current market sentiment
+tools: [
+  collections_search({ collection_ids: ["company_docs"] }),
+  web_search(),
+  x_search(),
+  code_execution()
+]
+
+// The model will:
+// 1. Search your internal documents
+// 2. Get current web/X data
+// 3. Run calculations if needed
+// 4. Synthesize with citations from all sources
+\`\`\`
+
 ## MINDSET
 
 Only think about a task if you have to, otherwise answer with conviction & professionalism.
@@ -1283,6 +1625,31 @@ You have a FULL LINUX SANDBOX. Use it! Run the code. Test it. Show real output.
 - Proper error handling
 - Comments for complex logic
 - No magic numbers - use named constants
+
+## CRITICAL: FILE STRUCTURE TEMPLATES
+
+**Reference templates are in \`Example_File_Structure_Templates/\`:**
+- \`python-template.py\` - Professional Python module structure
+- \`javascript-template.js\` - Professional JavaScript structure
+- \`typescript-template.ts\` - Professional TypeScript structure
+
+**ALWAYS follow these template patterns when generating code:**
+1. **Read the appropriate template FIRST** with \`read_file\` before writing any code
+2. **Use the same header format** with module box, purpose, description, author, version
+3. **Follow the section structure** with clear separators (═══════════════)
+4. **Include architecture diagrams** in comments showing module structure
+5. **Document dependencies, usage examples, and changelog**
+
+Example workflow for a game request:
+\`\`\`javascript
+// 1. Read the template to understand structure
+read_file({ path: "Example_File_Structure_Templates/python-template.py" })
+
+// 2. Write code following that exact structure
+write_file({ path: "space_shooter.py", content: <code following template format> })
+\`\`\`
+
+**The templates show PROFESSIONAL-GRADE code structure. Your output should match that quality.**
 
 **Anti-pattern (BAD):** Creating main.py, config.py, player.py, enemy.py, utils.py, game.py for a simple snake game
 **Good pattern:** One snake_game.py with Game, Snake, Food, PowerUp classes, all runnable with \`python snake_game.py\`
@@ -1479,12 +1846,132 @@ At task completion, verify:
 - [ ] Summary artifact created
 - [ ] Any follow-up items noted
 
+## PHASED EXECUTION PROTOCOL
+
+**For complex build requests (games, apps, features), follow this 5-phase protocol:**
+
+### Phase 1: Template Discovery
+\`\`\`javascript
+// BEFORE writing any code, read the appropriate template
+read_file({ path: "Example_File_Structure_Templates/python-template.py" })  // for Python
+read_file({ path: "Example_File_Structure_Templates/javascript-template.js" })  // for JS
+read_file({ path: "Example_File_Structure_Templates/typescript-template.ts" })  // for TS
+\`\`\`
+
+### Phase 2: Architecture Planning
+- Review the template structure (9 sections: header, imports, config, types, classes, helpers, core logic, events, main)
+- Plan your implementation following that exact structure
+- Identify classes, methods, and data structures needed
+
+### Phase 3: Implementation
+- Write the complete code following the template format
+- Use proper section separators (═══════════════)
+- Include docstrings, type hints, and architecture diagrams in comments
+- Single-file solutions when possible
+
+### Phase 4: Execution
+\`\`\`javascript
+// For Python games/apps:
+write_file({ path: "game.py", content: <your_code> })
+execute_command({ command: "source .venv/bin/activate && pip install <deps>" })
+execute_command({ command: "source .venv/bin/activate && python game.py" })
+
+// For Node/React:
+write_file({ path: "app.js", content: <your_code> })
+execute_command({ command: "node app.js" })  // or npm commands
+\`\`\`
+
+### Phase 5: Artifact Display
+\`\`\`javascript
+// Show the code to the user with syntax highlighting
+create_artifact({
+  type: "code",
+  title: "game.py",
+  content: <the_full_code>,
+  lang: "python"  // or "javascript", "typescript", etc.
+})
+\`\`\`
+
+**CRITICAL: Template Reading is MANDATORY**
+- NEVER skip Phase 1 (template discovery)
+- The templates exist to ensure consistent, professional-grade output
+- Your code MUST follow the 9-section structure from the templates
+
+---
+
+## CRITICAL: CANVAS OUTPUT REQUIREMENTS
+
+**EVERY code file MUST be displayed on the canvas as an artifact.**
+
+**Mandatory workflow for ALL code generation:**
+\`\`\`
+1. write_file → Save to sandbox filesystem
+2. create_artifact → Display on canvas (REQUIRED!)
+3. execute_command → Run/test the code
+4. If changes needed → Update both file AND artifact
+\`\`\`
+
+**NEVER just write a file without showing it on the canvas.**
+
+**Canvas Artifact Format for Code:**
+\`\`\`javascript
+create_artifact({
+  type: "code",
+  title: "filename.py",
+  description: "Brief description",
+  tags: ["python", "game"],
+  files: [{
+    path: "filename.py",
+    language: "python",  // CRITICAL: correct language!
+    content: fullCodeString,
+    role: "source",
+    entrypoint: true
+  }],
+  execution: { runtime: "python", command: "python filename.py" },
+  render: {
+    display: "block",
+    theme: "dark",
+    show_code: true,
+    allow_edit: true,    // ENABLE EDITING!
+    allow_download: true
+  }
+})
+\`\`\`
+
+**For React/HTML (Live Preview):**
+\`\`\`javascript
+create_artifact({
+  type: "react",  // or "html"
+  title: "App Component",
+  files: [{
+    path: "App.tsx",
+    language: "tsx",
+    content: componentCode,
+    entrypoint: true
+  }],
+  execution: { runtime: "browser" },
+  render: { display: "block", allow_edit: true }
+})
+\`\`\`
+
+**Code Quality Checklist:**
+□ Professional header with module name, purpose, author
+□ Clear section separators (═══════════════)
+□ Organized imports (stdlib → third-party → local)
+□ Constants at top, no magic numbers
+□ Functions have docstrings with Args/Returns
+□ Type hints throughout
+□ Error handling present
+□ Main entry point exists
+□ Code tested and runs
+□ Artifact shown on canvas with allow_edit: true
+
 ---
 Ready to architect. What would you like to build?`;
 
 
 // Streaming LLM call with interleaved text + tool support
-async function* streamLLM(messages, tools = null) {
+async function* streamLLM(messages, tools = null, options = {}) {
   const apiKey = process.env.XAI_API_KEY || process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error('No API key configured');
 
@@ -1499,6 +1986,21 @@ async function* streamLLM(messages, tools = null) {
     stream: true,  // Enable streaming!
     reasoning: { enabled: false }
   };
+
+  // Enable Live Search if xAI (auto mode - model decides when to search)
+  if (isXai && options.enableSearch !== false) {
+    body.search_parameters = {
+      mode: 'auto',
+      sources: [
+        { type: 'web' },
+        { type: 'x' },
+        { type: 'news' }
+      ],
+      return_citations: true,
+      max_search_results: 10
+    };
+  }
+
   if (tools) {
     body.tools = tools;
     if (isXai) {
@@ -1579,7 +2081,7 @@ async function* streamLLM(messages, tools = null) {
 }
 
 // Non-streaming fallback (for compatibility)
-async function callLLM(messages, tools = null) {
+async function callLLM(messages, tools = null, options = {}) {
   const apiKey = process.env.XAI_API_KEY || process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error('No API key configured');
 
@@ -1593,6 +2095,21 @@ async function callLLM(messages, tools = null) {
     max_tokens: 8192,
     reasoning: { enabled: false }
   };
+
+  // Enable Live Search if xAI (auto mode - model decides when to search)
+  if (isXai && options.enableSearch !== false) {
+    body.search_parameters = {
+      mode: 'auto',
+      sources: [
+        { type: 'web' },
+        { type: 'x' },
+        { type: 'news' }
+      ],
+      return_citations: true,
+      max_search_results: 10
+    };
+  }
+
   if (tools) {
     body.tools = tools;
     if (isXai) {
@@ -1615,6 +2132,331 @@ async function callLLM(messages, tools = null) {
   if (!response.ok) throw new Error(`LLM API error: ${response.status}`);
   return response.json();
 }
+
+// ==================== Embeddings Function ====================
+
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const OLLAMA_EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text';
+
+/**
+ * Get embeddings from Ollama (local)
+ */
+async function getOllamaEmbeddings(input) {
+  const inputs = Array.isArray(input) ? input : [input];
+  const embeddings = [];
+
+  for (const text of inputs) {
+    const response = await fetch(`${OLLAMA_URL}/api/embed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: OLLAMA_EMBED_MODEL,
+        input: text
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama embed error: ${response.status}`);
+    }
+
+    const result = await response.json();
+    // Ollama returns { embeddings: [[...]] } for single input
+    embeddings.push(result.embeddings?.[0] || result.embedding);
+  }
+
+  return {
+    embeddings,
+    model: OLLAMA_EMBED_MODEL,
+    usage: { prompt_tokens: inputs.join(' ').split(/\s+/).length },
+    dimensions: embeddings[0]?.length || 0
+  };
+}
+
+/**
+ * Generate embeddings - tries Ollama first, falls back to cloud APIs
+ * @param {string|string[]} input - Text or array of texts to embed
+ * @param {string} model - Embedding model to use (default: 'v1' for xAI)
+ * @returns {Promise<{embeddings: number[][], model: string, usage: object}>}
+ */
+async function getEmbeddings(input, model = 'v1') {
+  // Try Ollama first if configured
+  if (process.env.USE_OLLAMA_EMBEDDINGS !== 'false') {
+    try {
+      return await getOllamaEmbeddings(input);
+    } catch (err) {
+      console.log(`[Embeddings] Ollama failed (${err.message}), falling back to cloud API`);
+    }
+  }
+
+  // Fallback to cloud APIs
+  const apiKey = process.env.XAI_API_KEY || process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error('No API key configured');
+
+  const isXai = apiKey.startsWith('xai-');
+
+  // xAI uses their own endpoint, OpenRouter uses OpenAI-compatible
+  const endpoint = isXai
+    ? 'https://api.x.ai/v1/embeddings'
+    : 'https://openrouter.ai/api/v1/embeddings';
+
+  // Normalize input to array
+  const inputs = Array.isArray(input) ? input : [input];
+
+  const body = {
+    model: isXai ? model : 'openai/text-embedding-3-small',
+    input: inputs,
+    encoding_format: 'float'
+  };
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      ...(isXai ? {} : {
+        'HTTP-Referer': process.env.OPENROUTER_REFERER || 'spawn-sandbox',
+        'X-Title': process.env.OPENROUTER_TITLE || 'spawn'
+      }),
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Embeddings API error: ${response.status} - ${errorText}`);
+  }
+
+  const result = await response.json();
+
+  return {
+    embeddings: result.data.map(d => d.embedding),
+    model: result.model,
+    usage: result.usage,
+    dimensions: result.data[0]?.embedding?.length || 0
+  };
+}
+
+// ==================== Embeddings Endpoint ====================
+
+app.post('/api/embeddings', async (req, res) => {
+  try {
+    const { input, model } = req.body;
+
+    if (!input) {
+      return res.status(400).json({ error: 'Input text required' });
+    }
+
+    const result = await getEmbeddings(input, model);
+    res.json(result);
+  } catch (error) {
+    console.error('Embeddings error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== Vector Store (SQLite + Embeddings) ====================
+
+// Initialize SQLite database for vector storage
+const VECTOR_DB_PATH = path.join(__dirname, 'vectors.db');
+const vectorDb = new Database(VECTOR_DB_PATH);
+
+// Create tables for storing embeddings
+vectorDb.exec(`
+  CREATE TABLE IF NOT EXISTS documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,
+    metadata TEXT,
+    embedding BLOB NOT NULL,
+    collection TEXT DEFAULT 'default',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_collection ON documents(collection);
+`);
+
+/**
+ * Cosine similarity between two vectors
+ */
+function cosineSimilarity(a, b) {
+  if (a.length !== b.length) return 0;
+  let dotProduct = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+/**
+ * Store a document with its embedding in the vector database
+ */
+async function storeDocument(content, metadata = {}, collection = 'default') {
+  const { embeddings } = await getEmbeddings(content);
+  const embedding = embeddings[0];
+
+  const stmt = vectorDb.prepare(`
+    INSERT INTO documents (content, metadata, embedding, collection)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  const result = stmt.run(
+    content,
+    JSON.stringify(metadata),
+    Buffer.from(new Float32Array(embedding).buffer),
+    collection
+  );
+
+  return { id: result.lastInsertRowid, content, metadata, collection };
+}
+
+/**
+ * Search for similar documents using cosine similarity
+ */
+async function searchSimilar(query, options = {}) {
+  const { limit = 5, collection = null, threshold = 0.7 } = options;
+
+  // Get embedding for query
+  const { embeddings } = await getEmbeddings(query);
+  const queryEmbedding = embeddings[0];
+
+  // Get all documents (optionally filtered by collection)
+  let sql = 'SELECT id, content, metadata, embedding, collection FROM documents';
+  const params = [];
+  if (collection) {
+    sql += ' WHERE collection = ?';
+    params.push(collection);
+  }
+
+  const docs = vectorDb.prepare(sql).all(...params);
+
+  // Calculate similarities
+  const results = docs.map(doc => {
+    const embedding = new Float32Array(doc.embedding.buffer);
+    const similarity = cosineSimilarity(queryEmbedding, Array.from(embedding));
+    return {
+      id: doc.id,
+      content: doc.content,
+      metadata: JSON.parse(doc.metadata || '{}'),
+      collection: doc.collection,
+      similarity
+    };
+  });
+
+  // Filter by threshold, sort by similarity, limit results
+  return results
+    .filter(r => r.similarity >= threshold)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit);
+}
+
+/**
+ * Delete documents from the vector store
+ */
+function deleteDocument(id) {
+  const stmt = vectorDb.prepare('DELETE FROM documents WHERE id = ?');
+  return stmt.run(id);
+}
+
+/**
+ * List all collections
+ */
+function listCollections() {
+  const stmt = vectorDb.prepare('SELECT DISTINCT collection, COUNT(*) as count FROM documents GROUP BY collection');
+  return stmt.all();
+}
+
+/**
+ * Clear a collection
+ */
+function clearCollection(collection) {
+  const stmt = vectorDb.prepare('DELETE FROM documents WHERE collection = ?');
+  return stmt.run(collection);
+}
+
+// ==================== Vector Store Endpoints ====================
+
+// Store a document
+app.post('/api/vectors/store', async (req, res) => {
+  try {
+    const { content, metadata, collection } = req.body;
+    if (!content) return res.status(400).json({ error: 'Content required' });
+
+    const result = await storeDocument(content, metadata, collection);
+    res.json(result);
+  } catch (error) {
+    console.error('Vector store error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Batch store documents
+app.post('/api/vectors/store/batch', async (req, res) => {
+  try {
+    const { documents, collection } = req.body;
+    if (!documents || !Array.isArray(documents)) {
+      return res.status(400).json({ error: 'Documents array required' });
+    }
+
+    const results = [];
+    for (const doc of documents) {
+      const result = await storeDocument(
+        doc.content,
+        doc.metadata || {},
+        collection || doc.collection || 'default'
+      );
+      results.push(result);
+    }
+
+    res.json({ stored: results.length, documents: results });
+  } catch (error) {
+    console.error('Batch store error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Search for similar documents
+app.post('/api/vectors/search', async (req, res) => {
+  try {
+    const { query, limit, collection, threshold } = req.body;
+    if (!query) return res.status(400).json({ error: 'Query required' });
+
+    const results = await searchSimilar(query, { limit, collection, threshold });
+    res.json({ results, count: results.length });
+  } catch (error) {
+    console.error('Vector search error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// List collections
+app.get('/api/vectors/collections', (req, res) => {
+  try {
+    const collections = listCollections();
+    res.json({ collections });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Clear a collection
+app.delete('/api/vectors/collections/:collection', (req, res) => {
+  try {
+    const result = clearCollection(req.params.collection);
+    res.json({ deleted: result.changes });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete a document
+app.delete('/api/vectors/:id', (req, res) => {
+  try {
+    const result = deleteDocument(parseInt(req.params.id));
+    res.json({ deleted: result.changes > 0 });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ==================== Chat Endpoint ====================
 

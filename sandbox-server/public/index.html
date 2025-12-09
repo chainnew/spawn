@@ -23,11 +23,17 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.umd.min.js"></script>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; background: #0a0a0a; color: #e5e5e5; font-family: system-ui, -apple-system, sans-serif; }
+    html, body { height: 100%; overflow: hidden; }
+    html { font-size: 14px; }
+    body { margin: 0; background: #0a0a0a; color: #e5e5e5; font-family: system-ui, -apple-system, sans-serif; zoom: 0.85; }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #0a0a0a; }
     ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #444; }
+
+    /* Hide scrollbar on chat messages */
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 
     /* Spinner animations */
@@ -150,11 +156,14 @@
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"><\/script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"><\/script>
 <script src="https://unpkg.com/recharts@2.8.0/umd/Recharts.js"><\/script>
-<style>body { margin: 0; padding: 16px; font-family: system-ui; background: #0f0f0f; color: white; } .err { padding: 12px; background: #7f1d1d; color: #fca5a5; border-radius: 8px; }</style>
+<script src="https://unpkg.com/lucide-react@0.294.0/dist/umd/lucide-react.min.js"><\/script>
+<style>body { margin: 0; font-family: system-ui; background: #0f0f0f; color: white; } .err { padding: 12px; background: #7f1d1d; color: #fca5a5; border-radius: 8px; margin: 16px; }</style>
 </head><body><div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useRef, useCallback, useMemo } = React;
+const { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } = React;
 const { LineChart, Line, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer } = Recharts || {};
+// Lucide icons - destructure commonly used icons
+const { FileCode, Copy, Check, ChevronRight, ChevronDown, Folder, File, Terminal, Play, Settings, Search, GitBranch, Box, Layers, X, Plus, Minus, Edit, Save, Trash, Download, Upload, RefreshCw, ExternalLink, Menu, Home, User, Mail, Phone, Calendar, Clock, Star, Heart, ThumbsUp, AlertCircle, Info, HelpCircle, Eye, EyeOff, Lock, Unlock, Key, Database, Server, Cloud, Wifi, Bluetooth, Battery, Power, Zap, Sun, Moon, Loader, MoreHorizontal, MoreVertical, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Code, Image, Video, Music, Mic, Camera, Film, Tv, Monitor, Laptop, Smartphone, Tablet, Watch, Headphones, Speaker, Volume, VolumeX, Maximize, Minimize, Share, Link, Bookmark, Flag, Tag, Hash, AtSign, Filter, Sort, Grid, List, Layout, Columns, Sidebar, PanelLeft, PanelRight, Send, MessageSquare, MessageCircle, Bell, BellOff, Globe, Map, MapPin, Navigation, Compass, Target, Crosshair, Activity, BarChart2, TrendingUp, TrendingDown, DollarSign, CreditCard, ShoppingCart, ShoppingBag, Package, Gift, Award, Trophy, Medal, Crown, Gem, Sparkles, Wand, Magic, Palette, Brush, Pen, Pencil, Highlighter, Type, Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight, AlignJustify, Indent, Outdent, Quote, ListOrdered, ListChecks, CheckSquare, Square, Circle, Triangle, Hexagon, Octagon, Diamond } = window.lucideReact || {};
 class ErrorBoundary extends React.Component {
   constructor(p) { super(p); this.state = { error: null }; }
   static getDerivedStateFromError(error) { return { error }; }
@@ -162,7 +171,7 @@ class ErrorBoundary extends React.Component {
 }
 try {
   ${code}
-  const RootComponent = typeof App !== 'undefined' ? App : () => <div className="err">No App component</div>;
+  const RootComponent = typeof App !== 'undefined' ? App : (typeof AgentWorkspace !== 'undefined' ? AgentWorkspace : () => <div className="err">No App or AgentWorkspace component</div>);
   ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><RootComponent /></ErrorBoundary>);
   parent.postMessage({ type: 'ready' }, '*');
 } catch (err) {
@@ -213,14 +222,20 @@ new ResizeObserver(() => parent.postMessage({ type: 'resize', height: document.b
 <script src="https://cdn.jsdelivr.net/npm/prismjs@1/plugins/line-numbers/prism-line-numbers.min.js"><\/script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1/plugins/line-numbers/prism-line-numbers.min.css">
 <style>
-body { margin: 0; background: #1e1e1e; }
-pre { margin: 0; padding: 16px; border-radius: 0; }
-pre.line-numbers { padding-left: 3.8em; }
-code { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; line-height: 1.5; }
-.line-numbers .line-numbers-rows { border-right: 1px solid #444; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #1a1a1a; overflow-x: hidden; }
+pre { margin: 0; padding: 12px 16px; border-radius: 0; overflow-x: auto; white-space: pre; }
+pre.line-numbers { padding-left: 3.5em; }
+code { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas, monospace; font-size: 11px; line-height: 1.5; word-break: break-word; }
+.line-numbers .line-numbers-rows { border-right: 1px solid #333; padding-right: 8px; }
+.line-numbers-rows > span:before { color: #555; }
+::-webkit-scrollbar { height: 6px; width: 6px; }
+::-webkit-scrollbar-track { background: #1a1a1a; }
+::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
 </style>
 </head><body><pre class="line-numbers"><code class="language-${lang || 'javascript'}">${escapeHTML(code)}</code></pre>
-<script>Prism.highlightAll(); parent.postMessage({ type: 'ready' }, '*'); parent.postMessage({ type: 'resize', height: document.body.scrollHeight }, '*');<\/script></body></html>`,
+<script>Prism.highlightAll(); parent.postMessage({ type: 'ready' }, '*'); setTimeout(() => parent.postMessage({ type: 'resize', height: document.body.scrollHeight }, '*'), 50);<\/script></body></html>`,
 
       // Canvas/game renderer - for interactive visual outputs
       canvas: (code) => `<!DOCTYPE html><html><head>
@@ -584,7 +599,7 @@ ${code.replace(/\n/g, '<br>')}
       const hasMeta = artifact.description || artifact.tags?.length || execution || deps || artifact.version;
 
       return (
-        <div className="border border-spawn-border rounded-lg overflow-hidden bg-[#0f0f0f]">
+        <div className="border border-spawn-border rounded-lg overflow-hidden bg-[#0f0f0f] max-w-full">
           {/* Header */}
           <div className="bg-spawn-surface border-b border-spawn-border">
             <div className="h-10 flex items-center justify-between px-3">
@@ -766,19 +781,21 @@ ${code.replace(/\n/g, '<br>')}
             </div>
           ) : showCode ? (
             <div className="overflow-auto" style={{ maxHeight: 500 }}>
-              <pre className="text-sm p-4 bg-[#1e1e1e] text-gray-300 font-mono overflow-auto">
+              <pre className="text-sm p-4 bg-[#1e1e1e] text-gray-300 font-mono overflow-x-auto whitespace-pre" style={{ margin: 0 }}>
                 <code>{activeFile.content}</code>
               </pre>
             </div>
           ) : (
-            <iframe
-              ref={iframeRef}
-              className="w-full border-0"
-              style={{ height }}
-              sandbox="allow-scripts"
-              referrerPolicy="no-referrer"
-              loading="lazy"
-            />
+            <div className="overflow-hidden" style={{ maxHeight: 600 }}>
+              <iframe
+                ref={iframeRef}
+                className="w-full border-0"
+                style={{ height: Math.min(height, 600) }}
+                sandbox="allow-scripts"
+                referrerPolicy="no-referrer"
+                loading="lazy"
+              />
+            </div>
           )}
         </div>
       );
@@ -788,30 +805,59 @@ ${code.replace(/\n/g, '<br>')}
     function ToolCallDisplay({ tool, args, result }) {
       const [expanded, setExpanded] = useState(false);
       const isSuccess = result?.success !== false;
+      const isPending = !result;
+
+      // Compact summary based on tool type
+      const getSummary = () => {
+        if (tool === 'write_file') return args?.path?.split('/').pop() || 'file';
+        if (tool === 'read_file') return args?.path?.split('/').pop() || 'file';
+        if (tool === 'execute_command') return args?.command?.slice(0, 30) || 'cmd';
+        if (tool === 'list_files') return args?.path || '.';
+        if (tool === 'create_artifact') return args?.title || args?.type || 'artifact';
+        return JSON.stringify(args).slice(0, 25);
+      };
 
       return (
-        <div className="my-2 border border-spawn-border rounded-lg overflow-hidden bg-spawn-bg/50">
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="w-full flex items-center justify-between px-3 py-2 hover:bg-spawn-surface/50 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${isSuccess ? 'bg-green-500' : 'bg-red-500'}`} />
-              <span className="text-xs font-mono text-purple-400">{tool}</span>
-              <span className="text-xs text-spawn-muted truncate max-w-xs">
-                {JSON.stringify(args).slice(0, 60)}...
-              </span>
-            </div>
-            <span className="text-spawn-muted">{expanded ? '▼' : '▶'}</span>
-          </button>
+        <div
+          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer transition-all mr-1 mb-1 ${
+            isPending ? 'bg-yellow-500/20 border border-yellow-500/30' :
+            isSuccess ? 'bg-green-500/10 border border-green-500/20 hover:bg-green-500/20' :
+            'bg-red-500/10 border border-red-500/20 hover:bg-red-500/20'
+          }`}
+          onClick={() => setExpanded(!expanded)}
+          title={`${tool}: ${JSON.stringify(args)}`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${
+            isPending ? 'bg-yellow-400 animate-pulse' :
+            isSuccess ? 'bg-green-400' : 'bg-red-400'
+          }`} />
+          <span className="font-mono text-purple-400">{tool}</span>
+          <span className="text-spawn-muted truncate max-w-[120px]">{getSummary()}</span>
           {expanded && (
-            <div className="p-3 border-t border-spawn-border bg-[#0a0a0a]">
+            <div className="absolute left-0 top-full mt-1 z-50 bg-[#0a0a0a] border border-spawn-border rounded-lg p-3 shadow-xl min-w-[300px] max-w-[500px]" onClick={e => e.stopPropagation()}>
               <div className="text-xs text-spawn-muted mb-1">Arguments:</div>
-              <pre className="text-xs text-green-400 mb-3 overflow-auto max-h-32">{JSON.stringify(args, null, 2)}</pre>
-              <div className="text-xs text-spawn-muted mb-1">Result:</div>
-              <pre className="text-xs text-cyan-400 overflow-auto max-h-48">{JSON.stringify(result, null, 2)}</pre>
+              <pre className="text-xs text-green-400 mb-3 overflow-auto max-h-32 whitespace-pre-wrap">{JSON.stringify(args, null, 2)}</pre>
+              {result && (
+                <>
+                  <div className="text-xs text-spawn-muted mb-1">Result:</div>
+                  <pre className="text-xs text-cyan-400 overflow-auto max-h-32 whitespace-pre-wrap">{JSON.stringify(result, null, 2)}</pre>
+                </>
+              )}
             </div>
           )}
+        </div>
+      );
+    }
+
+    // Group of tool calls - shows parallel execution
+    function ToolCallGroup({ toolCalls }) {
+      if (!toolCalls?.length) return null;
+      return (
+        <div className="flex flex-wrap items-center gap-0.5 my-2 relative">
+          <span className="text-xs text-spawn-muted mr-1">Tools:</span>
+          {toolCalls.map((tc, i) => (
+            <ToolCallDisplay key={i} {...tc} />
+          ))}
         </div>
       );
     }
@@ -836,10 +882,8 @@ ${code.replace(/\n/g, '<br>')}
               <p className="text-sm whitespace-pre-wrap">{message.content}</p>
             </div>
 
-            {/* Tool calls */}
-            {message.toolCalls?.map((tc, i) => (
-              <ToolCallDisplay key={i} {...tc} />
-            ))}
+            {/* Tool calls - compact inline chips */}
+            <ToolCallGroup toolCalls={message.toolCalls} />
 
             {/* Artifacts */}
             {message.artifacts?.map((artifact, i) => (
@@ -865,8 +909,23 @@ ${code.replace(/\n/g, '<br>')}
       const [loading, setLoading] = useState(false);
       const [thinking, setThinking] = useState('');
       const [serverStatus, setServerStatus] = useState(null);
+      const [selectedArtifact, setSelectedArtifact] = useState(null);
+      const [canvasOpen, setCanvasOpen] = useState(false);
       const messagesEndRef = useRef(null);
       const inputRef = useRef(null);
+
+      // Get all artifacts from messages
+      const allArtifacts = messages.flatMap((m, mi) =>
+        (m.artifacts || []).map((a, ai) => ({ ...a, messageIndex: mi, artifactIndex: ai }))
+      );
+
+      // Auto-open canvas when first artifact arrives
+      useEffect(() => {
+        if (allArtifacts.length > 0 && !canvasOpen) {
+          setCanvasOpen(true);
+          setSelectedArtifact(allArtifacts[allArtifacts.length - 1]);
+        }
+      }, [allArtifacts.length]);
 
       // Check server health
       useEffect(() => {
@@ -1025,34 +1084,53 @@ ${code.replace(/\n/g, '<br>')}
       };
 
       return (
-        <div className="h-screen flex justify-center bg-spawn-bg">
-          <div className="w-full max-w-4xl flex flex-col border-x border-spawn-border">
-          {/* Header - minimal, same bg */}
-          <header className="h-14 border-b border-spawn-border/50 flex items-center justify-between px-4 bg-spawn-bg flex-shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center font-bold text-white">
-                A
+        <div className="h-screen flex bg-spawn-bg justify-center">
+          {/* Left Panel - Chat (clean, no borders) */}
+          <div className={`flex flex-col transition-all duration-300 ${canvasOpen ? 'w-[45%] flex-shrink-0' : 'w-full max-w-4xl'}`}>
+            {/* Header */}
+            <header className="h-12 flex items-center justify-between px-4 bg-spawn-bg flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center font-bold text-white text-sm">
+                  A
+                </div>
+                <div>
+                  <span className="font-semibold text-white text-sm">ARCHITECT</span>
+                  <span className="text-xs text-spawn-muted ml-2">Grok 4.1</span>
+                </div>
               </div>
-              <div>
-                <span className="font-semibold text-white">ARCHITECT</span>
-                <span className="text-xs text-spawn-muted ml-2">Grok 4.1</span>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <div className={`w-1.5 h-1.5 rounded-full ${serverStatus?.status === 'healthy' ? 'bg-green-500' : 'bg-red-500'}`} />
+                  <span className="text-xs text-spawn-muted">{serverStatus?.status === 'healthy' ? 'Online' : 'Offline'}</span>
+                </div>
+                {/* GitHub repo link */}
+                <a
+                  href="https://github.com/anthropics/claude-code"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-1.5 rounded transition-colors hover:bg-spawn-surface text-spawn-muted hover:text-white"
+                  title="View on GitHub"
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
+                  </svg>
+                </a>
+                {allArtifacts.length > 0 && (
+                  <button
+                    onClick={() => setCanvasOpen(!canvasOpen)}
+                    className={`p-1.5 rounded transition-colors ${canvasOpen ? 'bg-purple-600/20 text-purple-400' : 'hover:bg-spawn-surface text-spawn-muted'}`}
+                    title={canvasOpen ? 'Close canvas' : 'Open canvas'}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                    </svg>
+                  </button>
+                )}
               </div>
-            </div>
-            <div className="flex items-center gap-3">
-              {serverStatus?.workspace && (
-                <span className="text-xs text-spawn-muted px-2 py-1 bg-spawn-surface rounded">
-                  {serverStatus.workspace.split('/').pop()}
-                </span>
-              )}
-              <div className="flex items-center gap-1.5">
-                <div className={`w-1.5 h-1.5 rounded-full ${serverStatus?.status === 'healthy' ? 'bg-green-500' : 'bg-red-500'}`} />
-                <span className="text-xs text-spawn-muted">{serverStatus?.status === 'healthy' ? 'Online' : 'Offline'}</span>
-              </div>
-            </div>
-          </header>
+            </header>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-auto p-4 space-y-4">
+            {/* Messages */}
+            <div className="flex-1 overflow-auto p-4 space-y-4 hide-scrollbar">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-full">
                 <h1 className="text-3xl font-bold text-white mb-2">What can I help you build?</h1>
@@ -1119,8 +1197,30 @@ ${code.replace(/\n/g, '<br>')}
                   disabled={loading}
                 />
                 <div className="flex items-center justify-between px-3 pb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-spawn-muted">Enter to send</span>
+                  <div className="flex items-center gap-1">
+                    {/* Attach file button */}
+                    <button
+                      className="p-1.5 rounded-lg transition-colors hover:bg-spawn-border text-spawn-muted hover:text-white"
+                      title="Attach file"
+                      onClick={() => document.getElementById('file-input').click()}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                      </svg>
+                    </button>
+                    <input type="file" id="file-input" className="hidden" multiple />
+                    {/* Attach image button */}
+                    <button
+                      className="p-1.5 rounded-lg transition-colors hover:bg-spawn-border text-spawn-muted hover:text-white"
+                      title="Attach image"
+                      onClick={() => document.getElementById('image-input').click()}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </button>
+                    <input type="file" id="image-input" className="hidden" accept="image/*" multiple />
+                    <span className="text-xs text-spawn-muted ml-1">Enter to send</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -1146,6 +1246,67 @@ ${code.replace(/\n/g, '<br>')}
             </div>
           </div>
           </div>
+
+          {/* Right Panel - Canvas (artifacts) - with border wrap */}
+          {canvasOpen && (
+            <div className="flex-1 flex flex-col min-w-0 p-3 pl-0">
+              <div className="flex-1 flex flex-col bg-spawn-surface rounded-xl border border-spawn-border overflow-hidden">
+              {/* Canvas Header */}
+              <div className="h-11 border-b border-spawn-border/50 flex items-center justify-between px-4 flex-shrink-0 bg-spawn-bg/50">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <span className="text-sm font-medium text-white truncate">
+                    {selectedArtifact?.title || 'Canvas'}
+                  </span>
+                  {selectedArtifact?.type && (
+                    <span className="text-xs px-1.5 py-0.5 bg-purple-600/20 text-purple-400 rounded flex-shrink-0">
+                      {selectedArtifact.type}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  {/* Artifact selector dropdown */}
+                  {allArtifacts.length > 1 && (
+                    <select
+                      value={selectedArtifact ? `${selectedArtifact.messageIndex}-${selectedArtifact.artifactIndex}` : ''}
+                      onChange={(e) => {
+                        const [mi, ai] = e.target.value.split('-').map(Number);
+                        const artifact = allArtifacts.find(a => a.messageIndex === mi && a.artifactIndex === ai);
+                        if (artifact) setSelectedArtifact(artifact);
+                      }}
+                      className="text-xs bg-spawn-surface border border-spawn-border rounded px-2 py-1 text-white"
+                    >
+                      {allArtifacts.map((a, i) => (
+                        <option key={i} value={`${a.messageIndex}-${a.artifactIndex}`}>
+                          {a.title || `Artifact ${i + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <button
+                    onClick={() => setCanvasOpen(false)}
+                    className="p-1.5 hover:bg-spawn-surface rounded text-spawn-muted hover:text-white"
+                    title="Close canvas"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Canvas Content */}
+              <div className="flex-1 overflow-auto p-3">
+                {selectedArtifact ? (
+                  <ArtifactPreview artifact={selectedArtifact} />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-spawn-muted text-sm">
+                    No artifact selected
+                  </div>
+                )}
+              </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
