@@ -696,6 +696,21 @@ export default function App() {
             )}
           </div>
 
+          {/* Tasking.md tab */}
+          <button
+            onClick={() => {
+              // Open Tasking.md in the editor
+              const { openFile } = useAppStore.getState()
+              openFile('/workspace/Tasking.md')
+              setShowCode(true)
+            }}
+            className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[#1a1a1a] transition-colors text-xs text-spawn-muted hover:text-spawn-text"
+            title="Open Tasking.md"
+          >
+            <FileText className="w-3 h-3" />
+            <span>Tasking</span>
+          </button>
+
           <div className="flex items-center gap-2">
             <div className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-spawn-green' : 'bg-spawn-red'}`} />
             <span className="text-xs text-spawn-muted">
