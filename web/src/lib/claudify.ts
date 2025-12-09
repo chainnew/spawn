@@ -1,7 +1,7 @@
 // Project Analyzer - Generates CLAUDE.md and .claude/ config
 // This is the "Claude-ify" magic ✨
 
-import type { Repository } from './GitHubPanel'
+import type { Repository } from '../components/GitHubPanel'
 
 interface ProjectAnalysis {
   type: 'frontend' | 'backend' | 'fullstack' | 'library' | 'cli' | 'unknown'
@@ -19,7 +19,7 @@ interface ProjectAnalysis {
 }
 
 // Analyze project structure
-export function analyzeProject(files: string[], packageJson?: any, cargoToml?: string): ProjectAnalysis {
+export function analyzeProject(files: string[], packageJson?: any, _cargoToml?: string): ProjectAnalysis {
   const analysis: ProjectAnalysis = {
     type: 'unknown',
     framework: null,

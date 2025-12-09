@@ -7,6 +7,11 @@ export interface FileNode {
   children?: FileNode[]
 }
 
+interface PendingChatMessage {
+  content: string
+  filename: string
+}
+
 interface AppState {
   // Connection
   connected: boolean
@@ -31,6 +36,10 @@ interface AppState {
   terminalHistory: string[]
   addTerminalOutput: (output: string) => void
   clearTerminal: () => void
+
+  // Chat integration
+  pendingChatMessage: PendingChatMessage | null
+  setPendingChatMessage: (message: PendingChatMessage | null) => void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -89,4 +98,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ terminalHistory: [...terminalHistory, output] })
   },
   clearTerminal: () => set({ terminalHistory: [] }),
+
+  // Chat integration
+  pendingChatMessage: null,
+  setPendingChatMessage: (message) => set({ pendingChatMessage: message }),
 }))

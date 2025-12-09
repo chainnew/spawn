@@ -1,4 +1,3 @@
-import { useRef, useEffect } from 'react'
 import MonacoEditor from '@monaco-editor/react'
 import { X } from 'lucide-react'
 import { useAppStore } from '../stores/app'

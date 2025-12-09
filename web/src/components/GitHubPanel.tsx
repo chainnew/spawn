@@ -1,9 +1,7 @@
 import { useState } from 'react'
-import { 
-  Github, 
-  GitBranch, 
-  Star, 
-  GitFork,
+import {
+  Github,
+  Star,
   Folder,
   RefreshCw,
   Download,
@@ -12,7 +10,6 @@ import {
   ExternalLink,
   Search,
   Lock,
-  Unlock,
   Clock,
   Link,
   Loader2,

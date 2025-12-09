@@ -74,7 +74,7 @@ export default function Terminal() {
   }, [])
 
   const connectWebSocket = (xterm: XTerm) => {
-    const wsUrl = `ws://192.168.43.131:3000/ws/terminal`
+    const wsUrl = `ws://${window.location.hostname}:3080/ws/terminal`
     
     console.log('Connecting to:', wsUrl)
     const ws = new WebSocket(wsUrl)

@@ -14,11 +14,11 @@ export default defineConfig({
     host: true, // Allow external connections
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:3080',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:3000',
+        target: 'ws://localhost:3080',
         ws: true,
       },
     },

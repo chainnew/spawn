@@ -15,7 +15,7 @@ import {
 import { useAppStore, FileNode } from '../stores/app'
 
 // Use same host as page, just different port
-const API_BASE = `http://${window.location.hostname}:3000`
+const API_BASE = `http://${window.location.hostname}:3080`
 
 export default function FileExplorer() {
   const { files, setFiles, selectedFile, setSelectedFile, openFile } = useAppStore()

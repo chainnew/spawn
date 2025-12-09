@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { 
-  Terminal as TerminalIcon, 
-  Settings, 
+import {
+  Terminal as TerminalIcon,
+  Settings,
   Zap,
   X,
   Users,
@@ -14,8 +14,17 @@ import {
   Box,
   CheckCircle,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Sparkles,
+  Globe,
+  ChevronDown,
+  FolderPlus,
+  FileText
 } from 'lucide-react'
+
+// Dynamic Architect URL based on current hostname
+const ARCHITECT_URL = `http://${window.location.hostname}:3080`
+const API_BASE = `http://${window.location.hostname}:3080`
 import Terminal from './components/Terminal'
 import Editor from './components/Editor'
 import FileExplorer from './components/FileExplorer'
@@ -23,11 +32,48 @@ import Chat from './components/Chat'
 import AgentConfig from './components/AgentConfig'
 import GitHubPanel, { type Repository } from './components/GitHubPanel'
 import Sandbox from './components/Sandbox'
+import BrowserPanel from './components/BrowserPanel'
+import SandboxDocuments from './components/SandboxDocuments'
 import Dock from './components/ui/dock'
 import { useAppStore } from './stores/app'
-import { cloneRepo, type WebVMInstance } from './lib/webvm'
-import { claudifyProject } from './lib/claudify'
+import { type SandboxInstance } from './components/Sandbox'
 import { motion, AnimatePresence } from 'framer-motion'
+
+// Theme definitions
+const themes = {
+  spawn: {
+    name: 'Spawn',
+    accent: '262 83% 58%', // purple
+    accentHex: '#7c3aed',
+    ring: '262 83% 58%',
+  },
+  ocean: {
+    name: 'Ocean',
+    accent: '199 89% 48%', // cyan
+    accentHex: '#0ea5e9',
+    ring: '199 89% 48%',
+  },
+  forest: {
+    name: 'Forest',
+    accent: '142 71% 45%', // green
+    accentHex: '#22c55e',
+    ring: '142 71% 45%',
+  },
+  sunset: {
+    name: 'Sunset',
+    accent: '25 95% 53%', // orange
+    accentHex: '#f97316',
+    ring: '25 95% 53%',
+  },
+  rose: {
+    name: 'Rose',
+    accent: '346 77% 50%', // rose/pink
+    accentHex: '#e11d48',
+    ring: '346 77% 50%',
+  },
+} as const
+
+type ThemeKey = keyof typeof themes
 
 // Toast notification component
 function Toast({ 
@@ -270,48 +316,174 @@ function FloatingPanel({
   )
 }
 
-// Code Editor Panel
+// Code Editor Panel with tabs
 function CodeEditorPanel() {
+  const [activeTab, setActiveTab] = useState<'code' | 'browser' | 'docs'>('code')
+
   return (
-    <div className="flex h-full">
-      <div className="w-48 border-r border-[#333] flex flex-col">
-        <div className="h-7 bg-[#151515] border-b border-[#333] flex items-center px-2">
-          <span className="text-[10px] text-gray-400 uppercase tracking-wider">Explorer</span>
-        </div>
-        <div className="flex-1 overflow-auto">
-          <FileExplorer />
-        </div>
+    <div className="flex flex-col h-full">
+      {/* Tab bar */}
+      <div className="h-8 bg-[#151515] border-b border-[#333] flex items-center px-2 gap-1 flex-shrink-0">
+        <button
+          onClick={() => setActiveTab('code')}
+          className={`px-3 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${
+            activeTab === 'code'
+              ? 'bg-spawn-accent/20 text-spawn-accent'
+              : 'text-gray-400 hover:text-white hover:bg-[#222]'
+          }`}
+        >
+          <Code2 className="w-3 h-3" />
+          Code
+        </button>
+        <button
+          onClick={() => setActiveTab('browser')}
+          className={`px-3 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${
+            activeTab === 'browser'
+              ? 'bg-spawn-accent/20 text-spawn-accent'
+              : 'text-gray-400 hover:text-white hover:bg-[#222]'
+          }`}
+        >
+          <Globe className="w-3 h-3" />
+          Browser
+        </button>
+        <button
+          onClick={() => setActiveTab('docs')}
+          className={`px-3 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${
+            activeTab === 'docs'
+              ? 'bg-spawn-accent/20 text-spawn-accent'
+              : 'text-gray-400 hover:text-white hover:bg-[#222]'
+          }`}
+        >
+          <FileText className="w-3 h-3" />
+          Docs
+        </button>
       </div>
-      <div className="flex-1">
-        <Editor />
+
+      {/* Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {activeTab === 'code' ? (
+          <>
+            <div className="w-48 border-r border-[#333] flex flex-col">
+              <div className="h-7 bg-[#151515] border-b border-[#333] flex items-center px-2">
+                <span className="text-[10px] text-gray-400 uppercase tracking-wider">Explorer</span>
+              </div>
+              <div className="flex-1 overflow-auto">
+                <FileExplorer />
+              </div>
+            </div>
+            <div className="flex-1">
+              <Editor />
+            </div>
+          </>
+        ) : activeTab === 'browser' ? (
+          <div className="flex-1">
+            <BrowserPanel defaultUrl="https://example.com" />
+          </div>
+        ) : (
+          <div className="flex-1">
+            <SandboxDocuments />
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
 export default function App() {
-  // Panel visibility
+  // Panel visibility - will be overwritten by loaded layout
   const [showCode, setShowCode] = useState(true)
   const [showChat, setShowChat] = useState(true)
   const [showTerminal, setShowTerminal] = useState(false)
   const [showAgents, setShowAgents] = useState(false)
   const [showGitHub, setShowGitHub] = useState(false)
   const [showSandbox, setShowSandbox] = useState(false)
+  const [showArchitect, setShowArchitect] = useState(false)
+  const [layoutLoaded, setLayoutLoaded] = useState(false)
+
+  // Load layout from DB on mount
+  useEffect(() => {
+    const loadLayout = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/layout`)
+        if (res.ok) {
+          const layout = await res.json()
+          if (layout?.panels) {
+            setShowCode(layout.panels.code?.visible ?? true)
+            setShowChat(layout.panels.chat?.visible ?? true)
+            setShowTerminal(layout.panels.terminal?.visible ?? false)
+            setShowSandbox(layout.panels.sandbox?.visible ?? false)
+            setShowArchitect(layout.panels.architect?.visible ?? false)
+            setShowAgents(layout.panels.agents?.visible ?? false)
+            setShowGitHub(layout.panels.github?.visible ?? false)
+          }
+        }
+      } catch (e) {
+        console.log('Could not load layout from DB, using defaults')
+      }
+      setLayoutLoaded(true)
+    }
+    loadLayout()
+  }, [])
+
+  // Save layout to DB whenever panel visibility changes
+  const saveLayout = useCallback(() => {
+    if (!layoutLoaded) return // Don't save during initial load
+    const layout = {
+      panels: {
+        code: { visible: showCode },
+        chat: { visible: showChat },
+        terminal: { visible: showTerminal },
+        sandbox: { visible: showSandbox },
+        architect: { visible: showArchitect },
+        agents: { visible: showAgents },
+        github: { visible: showGitHub },
+      }
+    }
+    fetch(`${API_BASE}/api/layout`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(layout)
+    }).catch(() => {})
+  }, [layoutLoaded, showCode, showChat, showTerminal, showSandbox, showArchitect, showAgents, showGitHub])
+
+  useEffect(() => {
+    saveLayout()
+  }, [showCode, showChat, showTerminal, showSandbox, showArchitect, showAgents, showGitHub, saveLayout])
   
   // Sandbox state
-  const [sandboxVM, setSandboxVM] = useState<WebVMInstance | null>(null)
+  const [sandboxVM, setSandboxVM] = useState<SandboxInstance | null>(null)
   
   // Claude-ify state
   const [isClaudifying, setIsClaudifying] = useState(false)
   const [claudifyingRepo, setClaudifyingRepo] = useState<string | null>(null)
+
+  // Add Project state
+  const [isAddingProject, setIsAddingProject] = useState(false)
   
   // Toast
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' | 'error' | 'loading' } | null>(null)
-  
+
+  // Theme state
+  const [currentTheme, setCurrentTheme] = useState<ThemeKey>(() => {
+    const saved = localStorage.getItem('spawn-theme')
+    return (saved as ThemeKey) || 'spawn'
+  })
+  const [showThemeMenu, setShowThemeMenu] = useState(false)
+
+  // Apply theme to CSS variables
+  useEffect(() => {
+    const theme = themes[currentTheme]
+    const root = document.documentElement
+    root.style.setProperty('--primary', theme.accent)
+    root.style.setProperty('--accent', theme.accent)
+    root.style.setProperty('--ring', theme.ring)
+    localStorage.setItem('spawn-theme', currentTheme)
+  }, [currentTheme])
+
   const { connected } = useAppStore()
 
   // Handle sandbox ready
-  const handleSandboxReady = useCallback((vm: WebVMInstance) => {
+  const handleSandboxReady = useCallback((vm: SandboxInstance) => {
     setSandboxVM(vm)
     setToast({ message: 'Sandbox ready!', type: 'success' })
     setTimeout(() => setToast(null), 3000)
@@ -326,7 +498,7 @@ export default function App() {
 
     // If sandbox is ready, clone immediately
     if (sandboxVM) {
-      cloneRepo(sandboxVM, repo.clone_url)
+      sandboxVM.cloneRepo(repo.clone_url)
       setToast({ message: `Cloning ${repo.name}...`, type: 'loading' })
       setTimeout(() => setToast({ message: `Cloned ${repo.name}!`, type: 'success' }), 2000)
       setTimeout(() => setToast(null), 4000)
@@ -336,11 +508,42 @@ export default function App() {
     }
   }, [showSandbox, sandboxVM])
 
+  // Handle Add Project - index local workspace like a repo
+  const handleAddProject = useCallback(async () => {
+    setIsAddingProject(true)
+    setToast({ message: 'Indexing project files...', type: 'loading' })
+
+    try {
+      const res = await fetch(`${API_BASE}/api/index-project`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: '/workspace' })
+      })
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+      const data = await res.json()
+      setToast({
+        message: `Indexed ${data.filesIndexed || 0} files!`,
+        type: 'success'
+      })
+    } catch (e) {
+      console.error('Add project error:', e)
+      setToast({
+        message: 'Failed to index project',
+        type: 'error'
+      })
+    } finally {
+      setIsAddingProject(false)
+      setTimeout(() => setToast(null), 4000)
+    }
+  }, [])
+
   // Handle Claude-ify flow
   const handleClaudify = useCallback(async (repo: Repository) => {
     setIsClaudifying(true)
     setClaudifyingRepo(repo.name)
-    
+
     try {
       // Step 1: Open sandbox if not open
       if (!showSandbox) {
@@ -348,25 +551,25 @@ export default function App() {
         setToast({ message: 'Starting sandbox...', type: 'loading' })
         await new Promise(r => setTimeout(r, 1000))
       }
-      
+
       // Step 2: Clone repository
       if (sandboxVM) {
         setToast({ message: `Cloning ${repo.name}...`, type: 'loading' })
-        cloneRepo(sandboxVM, repo.clone_url)
+        sandboxVM.cloneRepo(repo.clone_url)
         await new Promise(r => setTimeout(r, 3000))
-        
+
         // Step 3: cd into repo and npm install
         setToast({ message: 'Installing dependencies...', type: 'loading' })
-        sandboxVM.typeCommand(`cd ${repo.name} && npm install`)
+        sandboxVM.runCommand(`cd ${repo.name} && npm install`)
         await new Promise(r => setTimeout(r, 5000))
-        
-        setToast({ message: `${repo.name} is ready! 🚀`, type: 'success' })
+
+        setToast({ message: `${repo.name} is ready!`, type: 'success' })
       } else {
         setToast({ message: 'Start sandbox first', type: 'error' })
       }
-      
+
       setTimeout(() => setToast(null), 4000)
-      
+
     } catch (error) {
       console.error('Claude-ify failed:', error)
       setToast({ message: `Failed to setup ${repo.name}`, type: 'error' })
@@ -402,11 +605,11 @@ export default function App() {
       onClick: () => setShowSandbox(!showSandbox),
       active: showSandbox
     },
-    { 
-      icon: Github, 
-      label: "GitHub", 
-      onClick: () => setShowGitHub(!showGitHub),
-      active: showGitHub
+    {
+      icon: Sparkles,
+      label: "Architect",
+      onClick: () => setShowArchitect(!showArchitect),
+      active: showArchitect
     },
     { 
       icon: Bot, 
@@ -445,7 +648,54 @@ export default function App() {
               <span>Setting up {claudifyingRepo}...</span>
             </div>
           )}
-          
+
+          {/* Theme Selector */}
+          <div className="relative">
+            <button
+              onClick={() => setShowThemeMenu(!showThemeMenu)}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-[#1a1a1a] transition-colors text-xs text-spawn-muted hover:text-spawn-text"
+            >
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: themes[currentTheme].accentHex }}
+              />
+              <span>{themes[currentTheme].name}</span>
+              <ChevronDown className="w-3 h-3" />
+            </button>
+
+            {showThemeMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowThemeMenu(false)}
+                />
+                <div className="absolute right-0 top-full mt-1 z-50 bg-[#141414] border border-[#333] rounded-lg shadow-xl py-1 min-w-[140px]">
+                  {(Object.keys(themes) as ThemeKey[]).map((key) => (
+                    <button
+                      key={key}
+                      onClick={() => {
+                        setCurrentTheme(key)
+                        setShowThemeMenu(false)
+                      }}
+                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-[#1f1f1f] transition-colors ${
+                        currentTheme === key ? 'text-white' : 'text-gray-400'
+                      }`}
+                    >
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: themes[key].accentHex }}
+                      />
+                      <span>{themes[key].name}</span>
+                      {currentTheme === key && (
+                        <CheckCircle className="w-3 h-3 ml-auto text-green-400" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
           <div className="flex items-center gap-2">
             <div className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-spawn-green' : 'bg-spawn-red'}`} />
             <span className="text-xs text-spawn-muted">
@@ -549,6 +799,41 @@ export default function App() {
           minSize={{ width: 300, height: 400 }}
         >
           <AgentConfig />
+        </FloatingPanel>
+
+        <FloatingPanel
+          title="Architect"
+          icon={Sparkles}
+          isOpen={showArchitect}
+          onClose={() => setShowArchitect(false)}
+          defaultPosition={{ x: 50, y: 50 }}
+          defaultSize={{ width: 1100, height: 700 }}
+          minSize={{ width: 600, height: 400 }}
+        >
+          <div className="flex flex-col h-full">
+            {/* Toolbar */}
+            <div className="h-9 bg-[#151515] border-b border-[#333] flex items-center px-3 gap-2 flex-shrink-0">
+              <button
+                onClick={handleAddProject}
+                disabled={isAddingProject}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md bg-spawn-accent/20 text-spawn-accent hover:bg-spawn-accent/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isAddingProject ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <FolderPlus className="w-3 h-3" />
+                )}
+                <span>{isAddingProject ? 'Indexing...' : 'Add Project'}</span>
+              </button>
+              <span className="text-[10px] text-gray-500">Index local project files for AI analysis</span>
+            </div>
+            {/* Iframe */}
+            <iframe
+              src={ARCHITECT_URL}
+              className="flex-1 w-full border-0"
+              title="Architect"
+            />
+          </div>
         </FloatingPanel>
       </div>
 

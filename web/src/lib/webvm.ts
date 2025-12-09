@@ -2,9 +2,6 @@
 // NOTE: CheerpX only works on x86 - disabled for ARM Mac/Kali
 
 import { Terminal } from '@xterm/xterm'
-import * as FitAddonModule from '@xterm/addon-fit'
-
-const FitAddon = FitAddonModule.FitAddon || (FitAddonModule as any).default
 
 // Stub for ARM - WebVM won't work anyway
 export const DISK_IMAGES = {

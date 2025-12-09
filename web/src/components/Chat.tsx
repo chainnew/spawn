@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
-import { Sparkles, User } from 'lucide-react'
+import { Sparkles, User, FileText, X } from 'lucide-react'
 import { PromptInputBox } from './ui/ai-prompt-box'
+import { useAppStore } from '../stores/app'
 
-const API_BASE = import.meta.env.DEV ? 'http://localhost:3000' : ''
+// Use same host as page, just different port
+const API_BASE = `http://${window.location.hostname}:3080`
 
 interface Message {
   id: string
@@ -12,23 +14,27 @@ interface Message {
 }
 
 export default function Chat() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: "Hey! I'm your AI coding assistant. What would you like to build today?",
-      timestamp: new Date(),
-    },
-  ])
+  const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Get pending document from store
+  const pendingChatMessage = useAppStore(state => state.pendingChatMessage)
+  const setPendingChatMessage = useAppStore(state => state.setPendingChatMessage)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const handleSend = async (message: string, files?: File[]) => {
+  const handleSend = async (message: string, _files?: File[]) => {
     if (!message.trim() || loading) return
+
+    // Include attached document in message if present
+    let fullMessage = message.trim()
+    if (pendingChatMessage) {
+      fullMessage = `[Attached: ${pendingChatMessage.filename}]\n\n${pendingChatMessage.content}\n\n---\n\n${fullMessage}`
+      setPendingChatMessage(null) // Clear the attachment
+    }
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -44,7 +50,7 @@ export default function Chat() {
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: message.trim() }),
+        body: JSON.stringify({ message: fullMessage }),
       })
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -62,7 +68,7 @@ export default function Chat() {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: "Sorry, I couldn't connect to the backend. Make sure the server is running on port 3000.",
+        content: "Sorry, I couldn't connect to the backend. Make sure the server is running on port 3080.",
         timestamp: new Date(),
       }
       setMessages((prev) => [...prev, errorMessage])
@@ -117,10 +123,29 @@ export default function Chat() {
 
       {/* Input */}
       <div className="p-3 border-t border-spawn-border">
-        <PromptInputBox 
+        {/* Attached document indicator */}
+        {pendingChatMessage && (
+          <div className="mb-2 p-2 bg-spawn-accent/10 border border-spawn-accent/30 rounded-lg flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-spawn-accent">
+              <FileText className="w-4 h-4" />
+              <span className="truncate max-w-[200px]">{pendingChatMessage.filename}</span>
+              <span className="text-xs text-gray-500">
+                ({Math.round(pendingChatMessage.content.length / 1024)}KB)
+              </span>
+            </div>
+            <button
+              onClick={() => setPendingChatMessage(null)}
+              className="p-1 text-gray-400 hover:text-red-400 rounded transition-colors"
+              title="Remove attachment"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+        <PromptInputBox
           onSend={handleSend}
           isLoading={loading}
-          placeholder="Ask me anything..."
+          placeholder={pendingChatMessage ? "Ask about the attached document..." : "Ask me anything..."}
         />
       </div>
     </div>

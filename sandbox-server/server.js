@@ -8,6 +8,9 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import Database from 'better-sqlite3';
+import http from 'http';
+import { WebSocketServer } from 'ws';
+import pty from 'node-pty';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType, BorderStyle } from 'docx';
 import PDFDocument from 'pdfkit';
 import { GITHUB_ANALYSIS_PROMPT } from './github-analysis-prompt.js';
@@ -3084,6 +3087,12 @@ vectorDb.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_collection ON documents(collection);
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 /**
@@ -3271,7 +3280,164 @@ app.delete('/api/vectors/:id', (req, res) => {
   }
 });
 
+// ==================== Settings/Layout Endpoints ====================
+
+// Get a setting by key
+app.get('/api/settings/:key', (req, res) => {
+  try {
+    const stmt = vectorDb.prepare('SELECT value, updated_at FROM settings WHERE key = ?');
+    const row = stmt.get(req.params.key);
+    if (row) {
+      res.json({ key: req.params.key, value: JSON.parse(row.value), updated_at: row.updated_at });
+    } else {
+      res.status(404).json({ error: 'Setting not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Save a setting (upsert)
+app.put('/api/settings/:key', (req, res) => {
+  try {
+    const { value } = req.body;
+    if (value === undefined) return res.status(400).json({ error: 'Value required' });
+
+    const stmt = vectorDb.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+    `);
+    stmt.run(req.params.key, JSON.stringify(value));
+    res.json({ key: req.params.key, value, success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get layout specifically (convenience endpoint)
+app.get('/api/layout', (req, res) => {
+  try {
+    const stmt = vectorDb.prepare('SELECT value FROM settings WHERE key = ?');
+    const row = stmt.get('layout');
+    if (row) {
+      res.json(JSON.parse(row.value));
+    } else {
+      // Return default layout if none saved
+      res.json({
+        panels: {
+          code: { visible: true, position: { x: 20, y: 60 }, size: { width: 700, height: 450 }, locked: false },
+          chat: { visible: true, position: { x: 740, y: 60 }, size: { width: 380, height: 450 }, locked: false },
+          terminal: { visible: false, position: { x: 20, y: 530 }, size: { width: 700, height: 220 }, locked: false },
+          sandbox: { visible: false, position: { x: 100, y: 100 }, size: { width: 700, height: 500 }, locked: false },
+          architect: { visible: false, position: { x: 50, y: 50 }, size: { width: 1100, height: 700 }, locked: false },
+          agents: { visible: false, position: { x: 1200, y: 60 }, size: { width: 340, height: 520 }, locked: false },
+          github: { visible: false, position: { x: 820, y: 60 }, size: { width: 360, height: 520 }, locked: false },
+        }
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Save layout
+app.put('/api/layout', (req, res) => {
+  try {
+    const layout = req.body;
+    if (!layout || !layout.panels) return res.status(400).json({ error: 'Invalid layout' });
+
+    const stmt = vectorDb.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES ('layout', ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+    `);
+    stmt.run(JSON.stringify(layout));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== Project Indexing Endpoint ====================
+
+// Index project files for AI analysis
+app.post('/api/index-project', async (req, res) => {
+  const { path = '/workspace' } = req.body;
+
+  try {
+    const projectPath = path.startsWith('/') ? path : `/workspace/${path}`;
+    const glob = require('glob');
+    const fs = require('fs');
+
+    // Find all code files in the project
+    const extensions = ['js', 'ts', 'jsx', 'tsx', 'py', 'rs', 'go', 'java', 'cpp', 'c', 'h', 'json', 'md', 'css', 'html', 'yaml', 'yml', 'toml'];
+    const pattern = `${projectPath}/**/*.{${extensions.join(',')}}`;
+
+    const files = glob.sync(pattern, {
+      ignore: ['**/node_modules/**', '**/target/**', '**/.git/**', '**/dist/**', '**/build/**', '**/__pycache__/**'],
+      nodir: true
+    });
+
+    let filesIndexed = 0;
+    const projectName = path.split('/').pop() || 'workspace';
+
+    for (const filePath of files) {
+      try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        if (content.length > 100000) continue; // Skip huge files
+
+        // Store in vectors table for RAG
+        const id = `project:${projectName}:${filePath}`;
+        const metadata = JSON.stringify({
+          type: 'project_file',
+          project: projectName,
+          path: filePath,
+          extension: filePath.split('.').pop(),
+          indexed_at: new Date().toISOString()
+        });
+
+        vectorDb.prepare(`
+          INSERT OR REPLACE INTO vectors (id, content, metadata, created_at)
+          VALUES (?, ?, ?, datetime('now'))
+        `).run(id, content.substring(0, 50000), metadata);
+
+        filesIndexed++;
+      } catch (fileErr) {
+        logger.warn('INDEX', `Failed to index ${filePath}`, fileErr.message);
+      }
+    }
+
+    logger.info('INDEX', `Indexed ${filesIndexed} files from ${projectPath}`);
+    res.json({ success: true, filesIndexed, projectName, path: projectPath });
+
+  } catch (error) {
+    logger.error('INDEX', 'Project indexing failed', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== Chat Endpoint ====================
+
+// Simple non-streaming chat endpoint
+app.post('/api/chat', async (req, res) => {
+  const { message, history = [] } = req.body;
+  if (!message) return res.status(400).json({ error: 'Message required' });
+
+  try {
+    const messages = [
+      { role: 'system', content: 'You are a helpful AI assistant for coding tasks. Be concise and helpful.' },
+      ...history.slice(-10).map(h => ({ role: h.role, content: h.content })),
+      { role: 'user', content: message },
+    ];
+
+    const response = await callLLM(messages, null, { enableSearch: false });
+    const assistantMessage = response.choices[0].message.content || 'No response generated';
+
+    res.json({ response: assistantMessage });
+  } catch (error) {
+    logger.error('CHAT', 'Chat error', error.message);
+    res.status(500).json({ error: 'Failed to generate response', details: error.message });
+  }
+});
 
 app.post('/api/chat/stream', async (req, res) => {
   const { message, history = [] } = req.body;
@@ -4108,16 +4274,103 @@ app.get('/api/git/user', async (req, res) => {
 
 // ==================== Start ====================
 
-app.listen(PORT, '0.0.0.0', () => {
+// Create HTTP server with Express app
+const server = http.createServer(app);
+
+// ==================== WebSocket PTY Terminal ====================
+const wss = new WebSocketServer({ server, path: '/ws/terminal' });
+
+// Store active PTY sessions
+const ptySessions = new Map();
+
+wss.on('connection', (ws) => {
+  logger.info('TERMINAL', 'New WebSocket terminal connection');
+
+  // Spawn PTY shell in workspace directory
+  const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
+  const ptyProcess = pty.spawn(shell, [], {
+    name: 'xterm-256color',
+    cols: 120,
+    rows: 30,
+    cwd: WORKSPACE_ABS,
+    env: { ...process.env, TERM: 'xterm-256color' }
+  });
+
+  const sessionId = Date.now().toString();
+  ptySessions.set(sessionId, ptyProcess);
+
+  // Send initial message
+  ws.send(JSON.stringify({
+    type: 'connected',
+    sessionId,
+    cwd: WORKSPACE_ABS
+  }));
+
+  // PTY output -> WebSocket
+  ptyProcess.onData((data) => {
+    if (ws.readyState === 1) { // WebSocket.OPEN
+      ws.send(JSON.stringify({ type: 'output', data }));
+    }
+  });
+
+  ptyProcess.onExit(({ exitCode }) => {
+    logger.info('TERMINAL', `PTY exited with code ${exitCode}`);
+    if (ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'exit', exitCode }));
+    }
+    ptySessions.delete(sessionId);
+  });
+
+  // WebSocket -> PTY
+  ws.on('message', (message) => {
+    try {
+      const msg = JSON.parse(message.toString());
+
+      switch (msg.type) {
+        case 'input':
+          ptyProcess.write(msg.data);
+          break;
+        case 'resize':
+          if (msg.cols && msg.rows) {
+            ptyProcess.resize(msg.cols, msg.rows);
+          }
+          break;
+        case 'ping':
+          ws.send(JSON.stringify({ type: 'pong' }));
+          break;
+      }
+    } catch (err) {
+      logger.error('TERMINAL', 'Failed to parse WebSocket message', err.message);
+    }
+  });
+
+  ws.on('close', () => {
+    logger.info('TERMINAL', 'WebSocket terminal disconnected');
+    ptyProcess.kill();
+    ptySessions.delete(sessionId);
+  });
+
+  ws.on('error', (err) => {
+    logger.error('TERMINAL', 'WebSocket error', err.message);
+    ptyProcess.kill();
+    ptySessions.delete(sessionId);
+  });
+});
+
+logger.info('TERMINAL', 'WebSocket PTY server initialized on /ws/terminal');
+
+// Start the server
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║  🐧 Spawn Sandbox (Local Mode)                            ║
 ║                                                           ║
 ║  URL:       http://localhost:${PORT}                       ║
+║  Terminal:  ws://localhost:${PORT}/ws/terminal             ║
 ║  Workspace: ${WORKSPACE_ABS.slice(0, 43).padEnd(43)}║
 ║                                                           ║
 ║  Tools: execute_command, read_file, write_file,           ║
-║         list_files, create_artifact                       ║
+║         list_files, create_artifact, terminal             ║
 ╚═══════════════════════════════════════════════════════════╝
 `);
 });

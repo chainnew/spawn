@@ -1,17 +1,16 @@
 import { useState } from 'react'
-import { 
-  Bot, 
-  Sparkles, 
-  Code2, 
-  Bug, 
-  FileText, 
+import {
+  Bot,
+  Sparkles,
+  Code2,
+  Bug,
+  FileText,
   Zap,
   ChevronRight,
   Copy,
   Check,
   Plus,
-  Pencil,
-  Trash2
+  Pencil
 } from 'lucide-react'
 
 // Preset agent configurations
@@ -163,7 +162,7 @@ export default function AgentConfig({ onSelectAgent, selectedAgentId }: AgentCon
   const [customPrompt, setCustomPrompt] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [showCustom, setShowCustom] = useState(false)
+  const [_showCustom, setShowCustom] = useState(false)
 
   const currentAgent = PRESET_AGENTS.find(a => a.id === activeAgent) || PRESET_AGENTS[0]
 

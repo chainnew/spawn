@@ -1,15 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { 
-  Play, 
-  Code2, 
-  Eye, 
-  Copy, 
-  Check, 
-  Trash2, 
+import {
+  Code2,
+  Eye,
+  Copy,
+  Check,
+  Trash2,
   Download,
   Maximize2,
   Minimize2,
-  RefreshCw,
   FileCode,
   Layout,
   Sparkles
@@ -26,42 +24,6 @@ interface Artifact {
 
 interface ArtifactsProps {
   onCodeRequest?: (code: string) => void
-}
-
-// Simple syntax highlighting
-function highlightCode(code: string, language: string): string {
-  const keywords = ['const', 'let', 'var', 'function', 'return', 'import', 'export', 'from', 'default', 'if', 'else', 'for', 'while', 'class', 'extends', 'new', 'this', 'async', 'await', 'try', 'catch', 'throw']
-  const types = ['string', 'number', 'boolean', 'null', 'undefined', 'true', 'false']
-  
-  let highlighted = code
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-  
-  // Strings
-  highlighted = highlighted.replace(/(["'`])(?:(?!\1)[^\\]|\\.)*?\1/g, '<span class="text-green-400">$&</span>')
-  
-  // Comments
-  highlighted = highlighted.replace(/(\/\/.*$)/gm, '<span class="text-gray-500">$1</span>')
-  highlighted = highlighted.replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="text-gray-500">$1</span>')
-  
-  // Keywords
-  keywords.forEach(kw => {
-    highlighted = highlighted.replace(new RegExp(`\\b(${kw})\\b`, 'g'), '<span class="text-purple-400">$1</span>')
-  })
-  
-  // Types/values
-  types.forEach(t => {
-    highlighted = highlighted.replace(new RegExp(`\\b(${t})\\b`, 'g'), '<span class="text-yellow-400">$1</span>')
-  })
-  
-  // Numbers
-  highlighted = highlighted.replace(/\b(\d+\.?\d*)\b/g, '<span class="text-orange-400">$1</span>')
-  
-  // JSX tags
-  highlighted = highlighted.replace(/(&lt;\/?)([\w]+)/g, '$1<span class="text-cyan-400">$2</span>')
-  
-  return highlighted
 }
 
 // Sandbox for running code safely
@@ -208,7 +170,7 @@ function CodeSandbox({ code, language }: { code: string; language: string }) {
   )
 }
 
-export default function Artifacts({ onCodeRequest }: ArtifactsProps) {
+export default function Artifacts({ onCodeRequest: _onCodeRequest }: ArtifactsProps) {
   const [artifacts, setArtifacts] = useState<Artifact[]>([
     {
       id: '1',
