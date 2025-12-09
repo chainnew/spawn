@@ -4359,6 +4359,317 @@ wss.on('connection', (ws) => {
 
 logger.info('TERMINAL', 'WebSocket PTY server initialized on /ws/terminal');
 
+// ==================== WebRTC Collaboration Signaling Server ====================
+
+// Collaboration rooms: Map<roomId, Map<peerId, { ws, user, cursor }>>
+const collabRooms = new Map();
+
+// WebSocket server for collaboration signaling
+const collabWss = new WebSocketServer({ server, path: '/ws/collab' });
+
+function generatePeerId() {
+  return `peer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+function broadcastToRoom(roomId, message, excludePeerId = null) {
+  const room = collabRooms.get(roomId);
+  if (!room) return;
+
+  const msgStr = JSON.stringify(message);
+  for (const [peerId, peer] of room) {
+    if (peerId !== excludePeerId && peer.ws.readyState === 1) {
+      peer.ws.send(msgStr);
+    }
+  }
+}
+
+function getRoomPeers(roomId, excludePeerId = null) {
+  const room = collabRooms.get(roomId);
+  if (!room) return [];
+
+  return Array.from(room.entries())
+    .filter(([peerId]) => peerId !== excludePeerId)
+    .map(([peerId, peer]) => ({
+      peerId,
+      user: peer.user,
+      cursor: peer.cursor
+    }));
+}
+
+collabWss.on('connection', (ws, req) => {
+  const peerId = generatePeerId();
+  let currentRoom = null;
+  let userData = { name: 'Anonymous', color: '#' + Math.floor(Math.random()*16777215).toString(16) };
+
+  logger.info('COLLAB', `New collaboration connection: ${peerId}`);
+
+  // Send peer ID to client
+  ws.send(JSON.stringify({ type: 'connected', peerId }));
+
+  ws.on('message', (message) => {
+    try {
+      const msg = JSON.parse(message.toString());
+
+      switch (msg.type) {
+        // Join a collaboration room (file/document)
+        case 'join': {
+          const { roomId, user } = msg;
+          if (!roomId) break;
+
+          // Leave current room if any
+          if (currentRoom) {
+            const oldRoom = collabRooms.get(currentRoom);
+            if (oldRoom) {
+              oldRoom.delete(peerId);
+              broadcastToRoom(currentRoom, { type: 'peer-left', peerId });
+              if (oldRoom.size === 0) collabRooms.delete(currentRoom);
+            }
+          }
+
+          // Join new room
+          currentRoom = roomId;
+          if (user) userData = { ...userData, ...user };
+
+          if (!collabRooms.has(roomId)) {
+            collabRooms.set(roomId, new Map());
+          }
+
+          const room = collabRooms.get(roomId);
+          room.set(peerId, { ws, user: userData, cursor: null });
+
+          // Send room info to joiner
+          ws.send(JSON.stringify({
+            type: 'room-joined',
+            roomId,
+            peers: getRoomPeers(roomId, peerId)
+          }));
+
+          // Notify others
+          broadcastToRoom(roomId, {
+            type: 'peer-joined',
+            peerId,
+            user: userData
+          }, peerId);
+
+          logger.info('COLLAB', `Peer ${peerId} joined room ${roomId}`);
+          break;
+        }
+
+        // Leave room
+        case 'leave': {
+          if (currentRoom) {
+            const room = collabRooms.get(currentRoom);
+            if (room) {
+              room.delete(peerId);
+              broadcastToRoom(currentRoom, { type: 'peer-left', peerId });
+              if (room.size === 0) collabRooms.delete(currentRoom);
+            }
+            currentRoom = null;
+          }
+          break;
+        }
+
+        // WebRTC Signaling: Offer
+        case 'offer': {
+          const { targetPeerId, offer } = msg;
+          const room = collabRooms.get(currentRoom);
+          if (!room) break;
+
+          const target = room.get(targetPeerId);
+          if (target && target.ws.readyState === 1) {
+            target.ws.send(JSON.stringify({
+              type: 'offer',
+              fromPeerId: peerId,
+              offer
+            }));
+          }
+          break;
+        }
+
+        // WebRTC Signaling: Answer
+        case 'answer': {
+          const { targetPeerId, answer } = msg;
+          const room = collabRooms.get(currentRoom);
+          if (!room) break;
+
+          const target = room.get(targetPeerId);
+          if (target && target.ws.readyState === 1) {
+            target.ws.send(JSON.stringify({
+              type: 'answer',
+              fromPeerId: peerId,
+              answer
+            }));
+          }
+          break;
+        }
+
+        // WebRTC Signaling: ICE Candidate
+        case 'ice-candidate': {
+          const { targetPeerId, candidate } = msg;
+          const room = collabRooms.get(currentRoom);
+          if (!room) break;
+
+          const target = room.get(targetPeerId);
+          if (target && target.ws.readyState === 1) {
+            target.ws.send(JSON.stringify({
+              type: 'ice-candidate',
+              fromPeerId: peerId,
+              candidate
+            }));
+          }
+          break;
+        }
+
+        // Cursor position update
+        case 'cursor': {
+          const { position, selection } = msg;
+          if (!currentRoom) break;
+
+          const room = collabRooms.get(currentRoom);
+          if (!room) break;
+
+          const peer = room.get(peerId);
+          if (peer) {
+            peer.cursor = { position, selection };
+          }
+
+          // Broadcast cursor to all peers
+          broadcastToRoom(currentRoom, {
+            type: 'cursor',
+            peerId,
+            user: userData,
+            position,
+            selection
+          }, peerId);
+          break;
+        }
+
+        // Editor operation (for operational transform)
+        case 'operation': {
+          const { operation, revision } = msg;
+          if (!currentRoom) break;
+
+          broadcastToRoom(currentRoom, {
+            type: 'operation',
+            peerId,
+            operation,
+            revision
+          }, peerId);
+          break;
+        }
+
+        // Sync request (new peer wants document state)
+        case 'sync-request': {
+          const { targetPeerId } = msg;
+          const room = collabRooms.get(currentRoom);
+          if (!room) break;
+
+          const target = room.get(targetPeerId);
+          if (target && target.ws.readyState === 1) {
+            target.ws.send(JSON.stringify({
+              type: 'sync-request',
+              fromPeerId: peerId
+            }));
+          }
+          break;
+        }
+
+        // Sync response (peer sends document state)
+        case 'sync-response': {
+          const { targetPeerId, content, revision } = msg;
+          const room = collabRooms.get(currentRoom);
+          if (!room) break;
+
+          const target = room.get(targetPeerId);
+          if (target && target.ws.readyState === 1) {
+            target.ws.send(JSON.stringify({
+              type: 'sync-response',
+              fromPeerId: peerId,
+              content,
+              revision
+            }));
+          }
+          break;
+        }
+
+        // Chat message in room
+        case 'chat': {
+          const { text } = msg;
+          if (!currentRoom || !text) break;
+
+          broadcastToRoom(currentRoom, {
+            type: 'chat',
+            peerId,
+            user: userData,
+            text,
+            timestamp: Date.now()
+          });
+          break;
+        }
+
+        // Ping/pong for keepalive
+        case 'ping':
+          ws.send(JSON.stringify({ type: 'pong' }));
+          break;
+      }
+    } catch (err) {
+      logger.error('COLLAB', 'Failed to parse WebSocket message', err.message);
+    }
+  });
+
+  ws.on('close', () => {
+    logger.info('COLLAB', `Collaboration connection closed: ${peerId}`);
+
+    if (currentRoom) {
+      const room = collabRooms.get(currentRoom);
+      if (room) {
+        room.delete(peerId);
+        broadcastToRoom(currentRoom, { type: 'peer-left', peerId });
+        if (room.size === 0) collabRooms.delete(currentRoom);
+      }
+    }
+  });
+
+  ws.on('error', (err) => {
+    logger.error('COLLAB', `WebSocket error for ${peerId}`, err.message);
+  });
+});
+
+// API endpoint to get active collaboration rooms
+app.get('/api/collab/rooms', (_req, res) => {
+  const rooms = [];
+  for (const [roomId, peers] of collabRooms) {
+    rooms.push({
+      roomId,
+      peerCount: peers.size,
+      peers: Array.from(peers.values()).map(p => ({ user: p.user }))
+    });
+  }
+  res.json({ rooms });
+});
+
+// API endpoint to get room info
+app.get('/api/collab/rooms/:roomId', (req, res) => {
+  const { roomId } = req.params;
+  const room = collabRooms.get(roomId);
+
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  res.json({
+    roomId,
+    peerCount: room.size,
+    peers: Array.from(room.entries()).map(([peerId, peer]) => ({
+      peerId,
+      user: peer.user,
+      cursor: peer.cursor
+    }))
+  });
+});
+
+logger.info('COLLAB', 'WebRTC collaboration signaling server initialized on /ws/collab');
+
 // Start the server
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`
@@ -4367,10 +4678,11 @@ server.listen(PORT, '0.0.0.0', () => {
 ║                                                           ║
 ║  URL:       http://localhost:${PORT}                       ║
 ║  Terminal:  ws://localhost:${PORT}/ws/terminal             ║
+║  Collab:    ws://localhost:${PORT}/ws/collab               ║
 ║  Workspace: ${WORKSPACE_ABS.slice(0, 43).padEnd(43)}║
 ║                                                           ║
 ║  Tools: execute_command, read_file, write_file,           ║
-║         list_files, create_artifact, terminal             ║
+║         list_files, create_artifact, terminal, collab     ║
 ╚═══════════════════════════════════════════════════════════╝
 `);
 });
